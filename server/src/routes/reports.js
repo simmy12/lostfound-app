@@ -1,9 +1,19 @@
 const express = require("express");
 const pool = require("../db/pool");
+const asyncHandler = require("../lib/asyncHandler");
 
 const router = express.Router();
 
 const MAX_LINKED = 4;
+
+function parseId(req, res, name = "id") {
+  const id = Number(req.params[name]);
+  if (!Number.isInteger(id)) {
+    res.status(400).json({ error: `${name} must be an integer` });
+    return null;
+  }
+  return id;
+}
 
 // ---- create ----
 // Payload:
@@ -18,7 +28,7 @@ const MAX_LINKED = 4;
 //
 // contents/container/nearby each become their own independent report, sharing the main report's
 // universal (location/date) answers — asked once, applied to every report created in this submission.
-router.post("/reports", async (req, res) => {
+router.post("/reports", asyncHandler(async (req, res) => {
   const {
     type,
     item_id,
@@ -106,10 +116,10 @@ router.post("/reports", async (req, res) => {
   } finally {
     client.release();
   }
-});
+}));
 
 // ---- search / list (for the rep screen) ----
-router.get("/reports", async (req, res) => {
+router.get("/reports", asyncHandler(async (req, res) => {
   const { type, status, main_id, sub_id, item_id, q, date_from, date_to, region, city } = req.query;
   const clauses = [];
   const params = [];
@@ -153,7 +163,7 @@ router.get("/reports", async (req, res) => {
   }
 
   res.json(reports);
-});
+}));
 
 // resolves, for each report id: names of its contents (if it's a container), its container's
 // name (if it's inside one), and names of nearby-linked reports.
@@ -217,8 +227,9 @@ async function linksFor(reportIds) {
 }
 
 // ---- detail ----
-router.get("/reports/:id", async (req, res) => {
-  const id = Number(req.params.id);
+router.get("/reports/:id", asyncHandler(async (req, res) => {
+  const id = parseId(req, res);
+  if (id == null) return;
   const r = await pool.query(
     `SELECT r.*, i.name AS item_name, cs.name AS sub_name, cm.name AS main_name
      FROM reports r
@@ -240,7 +251,7 @@ router.get("/reports/:id", async (req, res) => {
   );
   const links = await linksFor([id]);
   res.json({ ...r.rows[0], answers: values.rows, ...links.get(id) });
-});
+}));
 
 // ---- matches, computed on demand ----
 async function computeMatches(reportId) {
@@ -311,8 +322,10 @@ async function computeMatches(reportId) {
   return results;
 }
 
-router.get("/reports/:id/matches", async (req, res) => {
-  const results = await computeMatches(Number(req.params.id));
+router.get("/reports/:id/matches", asyncHandler(async (req, res) => {
+  const id = parseId(req, res);
+  if (id == null) return;
+  const results = await computeMatches(id);
   if (results === null) return res.status(404).json({ error: "not found" });
   if (!results.length) return res.json([]);
 
@@ -330,12 +343,14 @@ router.get("/reports/:id/matches", async (req, res) => {
   const byId = new Map(detail.rows.map((d) => [d.id, d]));
   const links = await linksFor(ids);
   res.json(results.map((r) => ({ ...byId.get(r.report_id), score: r.score, ...links.get(r.report_id) })));
-});
+}));
 
 // ---- confirm a match ----
-router.post("/reports/:id/matches/:otherId/confirm", async (req, res) => {
-  const id = Number(req.params.id);
-  const otherId = Number(req.params.otherId);
+router.post("/reports/:id/matches/:otherId/confirm", asyncHandler(async (req, res) => {
+  const id = parseId(req, res, "id");
+  if (id == null) return;
+  const otherId = parseId(req, res, "otherId");
+  if (otherId == null) return;
   const baseR = await pool.query(`SELECT type FROM reports WHERE id = $1`, [id]);
   if (!baseR.rows.length) return res.status(404).json({ error: "not found" });
   const lostId = baseR.rows[0].type === "lost" ? id : otherId;
@@ -360,6 +375,6 @@ router.post("/reports/:id/matches/:otherId/confirm", async (req, res) => {
   } finally {
     client.release();
   }
-});
+}));
 
 module.exports = router;

@@ -126,3 +126,17 @@ textarea{resize:vertical;min-height:72px;line-height:1.5}
 .divider{border:none;border-top:1px solid var(--border);margin:14px 0}
 .info-note{font-size:12px;color:var(--text2);margin-top:5px}
 .muted{color:var(--text2);font-size:13px}
+
+.modal-overlay{position:fixed;inset:0;background:rgba(15,23,42,.5);display:flex;align-items:center;justify-content:center;z-index:1000;padding:20px}
+.modal-box{background:var(--white);border-radius:var(--rl);box-shadow:0 10px 40px rgba(0,0,0,.2);max-width:900px;width:100%;max-height:90vh;display:flex;flex-direction:column}
+.modal-h{padding:14px 20px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;font-size:15px;font-weight:600}
+.modal-b{padding:20px;overflow-y:auto}
+.modal-close{cursor:pointer;background:none;border:none;font-size:20px;color:var(--text2);line-height:1;padding:2px 6px}
+.modal-close:hover{color:var(--text)}
+
+.side-toggle{display:flex;border:1px solid var(--border2);border-radius:999px;overflow:hidden}
+.side-toggle button{flex:1;padding:8px 16px;border:none;background:var(--white);color:var(--text2);font-size:13px;font-weight:600;cursor:pointer}
+.side-toggle button.act{background:var(--pr);color:#fff}
+
+.detail-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+.detail-side-h{font-size:13px;font-weight:700;margin-bottom:8px;padding-bottom:6px;border-bottom:2px solid var(--border)}

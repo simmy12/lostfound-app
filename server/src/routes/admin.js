@@ -1,27 +1,28 @@
 const express = require("express");
 const pool = require("../db/pool");
+const asyncHandler = require("../lib/asyncHandler");
 
 const router = express.Router();
 
 // update weight of an item-specific attribute
-router.put("/admin/item-attributes/:itemId/:attributeId", async (req, res) => {
+router.put("/admin/item-attributes/:itemId/:attributeId", asyncHandler(async (req, res) => {
   const { weight } = req.body;
   await pool.query(
     `UPDATE item_attributes SET weight = $1 WHERE item_id = $2 AND attribute_id = $3`,
     [weight, req.params.itemId, req.params.attributeId]
   );
   res.json({ ok: true });
-});
+}));
 
 // update weight of a universal attribute
-router.put("/admin/universal-attributes/:attributeId", async (req, res) => {
+router.put("/admin/universal-attributes/:attributeId", asyncHandler(async (req, res) => {
   const { weight } = req.body;
   await pool.query(`UPDATE universal_attributes SET weight = $1 WHERE attribute_id = $2`, [weight, req.params.attributeId]);
   res.json({ ok: true });
-});
+}));
 
 // add a selectable value to an attribute
-router.post("/admin/attributes/:attributeId/values", async (req, res) => {
+router.post("/admin/attributes/:attributeId/values", asyncHandler(async (req, res) => {
   const { value } = req.body;
   if (!value) return res.status(400).json({ error: "value is required" });
   const r = await pool.query(
@@ -31,15 +32,15 @@ router.post("/admin/attributes/:attributeId/values", async (req, res) => {
     [req.params.attributeId, value]
   );
   res.status(201).json(r.rows[0] || {});
-});
+}));
 
-router.delete("/admin/attribute-values/:id", async (req, res) => {
+router.delete("/admin/attribute-values/:id", asyncHandler(async (req, res) => {
   await pool.query(`DELETE FROM attribute_values WHERE id = $1`, [req.params.id]);
   res.json({ ok: true });
-});
+}));
 
 // list every item together with its attribute/weight config — feeds the admin tree screen
-router.get("/admin/items", async (req, res) => {
+router.get("/admin/items", asyncHandler(async (req, res) => {
   const r = await pool.query(
     `SELECT i.id, i.name, i.sub_id, i.can_be_contained, i.can_have_nearby, i.can_contain_items,
             cs.name AS sub_name, cm.id AS main_id, cm.name AS main_name
@@ -47,36 +48,36 @@ router.get("/admin/items", async (req, res) => {
      ORDER BY cm.name, cs.name, i.name`
   );
   res.json(r.rows);
-});
+}));
 
-router.get("/admin/universal-attributes", async (req, res) => {
+router.get("/admin/universal-attributes", asyncHandler(async (req, res) => {
   const r = await pool.query(
     `SELECT a.id, a.name, a.input_type, ua.weight, ua.display_order
      FROM universal_attributes ua JOIN attributes a ON a.id = ua.attribute_id
      ORDER BY ua.display_order`
   );
   res.json(r.rows);
-});
+}));
 
 // ---- category management ----
 
-router.get("/admin/categories", async (req, res) => {
+router.get("/admin/categories", asyncHandler(async (req, res) => {
   const mains = await pool.query(`SELECT id, name FROM categories_main ORDER BY name`);
   const subs = await pool.query(`SELECT id, main_id, name FROM categories_sub ORDER BY name`);
   res.json(mains.rows.map((m) => ({ ...m, subs: subs.rows.filter((s) => s.main_id === m.id) })));
-});
+}));
 
 // move an item to a different (existing) sub-category
-router.put("/admin/items/:id/category", async (req, res) => {
+router.put("/admin/items/:id/category", asyncHandler(async (req, res) => {
   const { sub_id } = req.body;
   if (!sub_id) return res.status(400).json({ error: "sub_id is required" });
   const r = await pool.query(`UPDATE items SET sub_id = $1 WHERE id = $2 RETURNING id`, [sub_id, req.params.id]);
   if (!r.rows.length) return res.status(404).json({ error: "not found" });
   res.json({ ok: true });
-});
+}));
 
 // add a new sub-category under an existing main category
-router.post("/admin/categories/:mainId/subs", async (req, res) => {
+router.post("/admin/categories/:mainId/subs", asyncHandler(async (req, res) => {
   const { name } = req.body;
   if (!name) return res.status(400).json({ error: "name is required" });
   const r = await pool.query(
@@ -85,10 +86,10 @@ router.post("/admin/categories/:mainId/subs", async (req, res) => {
     [req.params.mainId, name]
   );
   res.status(201).json(r.rows[0] || {});
-});
+}));
 
 // per-item flags: whether to ask "was this inside something?" / "anything found nearby?"
-router.put("/admin/items/:id/flags", async (req, res) => {
+router.put("/admin/items/:id/flags", asyncHandler(async (req, res) => {
   const { can_be_contained, can_have_nearby, can_contain_items } = req.body;
   const r = await pool.query(
     `UPDATE items SET
@@ -100,12 +101,12 @@ router.put("/admin/items/:id/flags", async (req, res) => {
   );
   if (!r.rows.length) return res.status(404).json({ error: "not found" });
   res.json(r.rows[0]);
-});
+}));
 
 // ---- "אחר" review: free-text answers reporters typed instead of picking a listed value ----
 
 // grouped by attribute + normalized text, so repeated phrasings stand out
-router.get("/admin/other-answers", async (req, res) => {
+router.get("/admin/other-answers", asyncHandler(async (req, res) => {
   const r = await pool.query(
     `SELECT rav.attribute_id, a.name AS attribute_name, a.scope,
             trim(rav.free_text) AS text, COUNT(*) AS count,
@@ -118,10 +119,10 @@ router.get("/admin/other-answers", async (req, res) => {
      ORDER BY count DESC, attribute_name`
   );
   res.json(r.rows);
-});
+}));
 
 // promote a grouped "אחר" text to a real, selectable attribute value
-router.post("/admin/other-answers/promote", async (req, res) => {
+router.post("/admin/other-answers/promote", asyncHandler(async (req, res) => {
   const { attribute_id, text, retroactive } = req.body;
   if (!attribute_id || !text) return res.status(400).json({ error: "attribute_id and text are required" });
 
@@ -163,6 +164,6 @@ router.post("/admin/other-answers/promote", async (req, res) => {
   } finally {
     client.release();
   }
-});
+}));
 
 module.exports = router;

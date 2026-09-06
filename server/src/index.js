@@ -17,5 +17,12 @@ app.use("/api", adminRoutes);
 
 app.get("/api/health", (req, res) => res.json({ ok: true }));
 
+// catches anything forwarded via next(err) from asyncHandler-wrapped routes — without this,
+// an async route error would otherwise be an unhandled rejection that crashes the process.
+app.use((err, req, res, next) => {
+  console.error(err);
+  res.status(500).json({ error: "internal server error" });
+});
+
 const port = process.env.PORT || 4000;
 app.listen(port, () => console.log(`lostfound API listening on :${port}`));
