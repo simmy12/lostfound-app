@@ -256,7 +256,7 @@ function ItemPicker({ categories, lockMainName, onSelect, selectedItemId }) {
                   className={"opt-btn" + (selectedItemId === it.id ? " sel" : "")}
                   onClick={() => onSelect(it)}
                 >
-                  {it.name} <span style={{ opacity: 0.6, fontSize: 11 }}>({it.sub_name})</span>
+                  {it.name}
                 </button>
               ))}
             </div>
