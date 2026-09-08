@@ -125,6 +125,8 @@ textarea{resize:vertical;min-height:72px;line-height:1.5}
 
 .divider{border:none;border-top:1px solid var(--border);margin:14px 0}
 .info-note{font-size:12px;color:var(--text2);margin-top:5px}
+.info-note a{color:var(--pr);text-decoration:none;font-weight:600}
+.info-note a:hover{text-decoration:underline}
 .muted{color:var(--text2);font-size:13px}
 
 .modal-overlay{position:fixed;inset:0;background:rgba(15,23,42,.5);display:flex;align-items:center;justify-content:center;z-index:1000;padding:20px}

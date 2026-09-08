@@ -148,7 +148,7 @@ function flattenAnswers(answers) {
 // Reports the chosen item ({id, name}) up via onSelect; null when nothing is chosen (yet).
 function ItemPicker({ categories, lockMainName, onSelect, selectedItemId }) {
   const lockedMain = lockMainName ? categories.find((m) => m.name === lockMainName) : null;
-  const [mode, setMode] = useState("category");
+  const [mode, setMode] = useState("search"); // search first — it's the fastest path for most people
   const [mainId, setMainId] = useState(lockedMain?.id || null);
   const [subId, setSubId] = useState(null);
   const [items, setItems] = useState([]);
@@ -201,15 +201,11 @@ function ItemPicker({ categories, lockMainName, onSelect, selectedItemId }) {
 
   return (
     <>
-      <div className="q-block">
-        <div className="side-toggle" style={{ maxWidth: 300 }}>
-          <button type="button" className={mode === "category" ? "act" : ""} onClick={() => switchMode("category")}>לפי קטגוריה</button>
-          <button type="button" className={mode === "search" ? "act" : ""} onClick={() => switchMode("search")}>חיפוש חופשי</button>
-        </div>
-      </div>
-
       {mode === "category" && (
         <>
+          <p className="info-note">
+            <a href="#" onClick={(e) => { e.preventDefault(); switchMode("search"); }}>→ חזרה לחיפוש</a>
+          </p>
           {!lockedMain && (
             <div className="q-block">
               <label>קטגוריה ראשית</label>
@@ -245,8 +241,8 @@ function ItemPicker({ categories, lockMainName, onSelect, selectedItemId }) {
 
       {mode === "search" && (
         <div className="q-block">
-          <label>חיפוש פריט לפי שם</label>
-          <input type="text" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="הקלד/י שם פריט..." />
+          <label>מה איבדת/מצאת? התחל/י להקליד</label>
+          <input type="text" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="למשל: מעיל, ארנק, משקפיים..." autoFocus />
           {searchResults.length > 0 && (
             <div className="opts">
               {searchResults.map((it) => (
@@ -262,6 +258,9 @@ function ItemPicker({ categories, lockMainName, onSelect, selectedItemId }) {
             </div>
           )}
           {query.trim() && !searchResults.length && <p className="muted">אין תוצאות.</p>}
+          <p className="info-note">
+            לא מוצא/ת? <a href="#" onClick={(e) => { e.preventDefault(); switchMode("category"); }}>בחר/י לפי קטגוריה</a>
+          </p>
         </div>
       )}
     </>
