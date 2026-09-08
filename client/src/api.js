@@ -16,6 +16,7 @@ export const api = {
   getCategories: () => req("/categories"),
   getItems: (subId) => req(`/subs/${subId}/items`),
   getItem: (itemId) => req(`/items/${itemId}`),
+  searchItems: (q) => req(`/items/search?q=${encodeURIComponent(q)}`),
   getItemAttributes: (itemId) => req(`/items/${itemId}/attributes`),
   getUniversalAttributes: () => req("/universal-attributes"),
 

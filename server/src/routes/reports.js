@@ -33,6 +33,7 @@ router.post("/reports", asyncHandler(async (req, res) => {
     type,
     item_id,
     free_text,
+    note,
     contact_name,
     contact_phone,
     contact_email,
@@ -53,9 +54,9 @@ router.post("/reports", asyncHandler(async (req, res) => {
 
     async function insertReport(itemId, answers) {
       const r = await client.query(
-        `INSERT INTO reports (type, item_id, free_text, contact_name, contact_phone, contact_email)
-         VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
-        [type, itemId, free_text || null, contact_name || null, contact_phone || null, contact_email || null]
+        `INSERT INTO reports (type, item_id, free_text, note, contact_name, contact_phone, contact_email)
+         VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
+        [type, itemId, free_text || null, note || null, contact_name || null, contact_phone || null, contact_email || null]
       );
       const reportId = r.rows[0].id;
       const allAnswers = [...answers, ...universal_answers];

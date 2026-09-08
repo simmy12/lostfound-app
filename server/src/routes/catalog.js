@@ -31,6 +31,22 @@ router.get("/subs/:subId/items", asyncHandler(async (req, res) => {
   res.json(r.rows);
 }));
 
+// free-text search across the whole item catalog (not scoped to a category) — powers the
+// "חיפוש חופשי" alternative to the category/sub/item pickers.
+router.get("/items/search", asyncHandler(async (req, res) => {
+  const q = (req.query.q || "").trim();
+  if (!q) return res.json([]);
+  const r = await pool.query(
+    `SELECT i.id, i.name, cs.name AS sub_name, cm.name AS main_name
+     FROM items i JOIN categories_sub cs ON cs.id = i.sub_id JOIN categories_main cm ON cm.id = cs.main_id
+     WHERE i.name ILIKE $1
+     ORDER BY i.name
+     LIMIT 20`,
+    [`%${q}%`]
+  );
+  res.json(r.rows);
+}));
+
 router.get("/items/:itemId", asyncHandler(async (req, res) => {
   const itemId = parseId(req, res, "itemId");
   if (itemId == null) return;

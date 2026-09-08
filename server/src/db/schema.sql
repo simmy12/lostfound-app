@@ -73,7 +73,8 @@ CREATE TABLE reports (
   type           TEXT NOT NULL CHECK (type IN ('lost','found')),
   item_id        INTEGER NOT NULL REFERENCES items(id),
   status         TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','matched','closed')),
-  free_text      TEXT,
+  free_text      TEXT,  -- "תיאור נוסף"
+  note           TEXT,  -- "הערה" — a second, separate free-text field
   contact_name   TEXT,
   contact_phone  TEXT,
   contact_email  TEXT,

@@ -62,7 +62,8 @@ function ReportDetail({ r }) {
           <span>{a.value || a.free_text || "—"}</span>
         </div>
       ))}
-      {r.free_text && <div className="sum-row"><span className="sum-k">הערות</span><span>{r.free_text}</span></div>}
+      {r.free_text && <div className="sum-row"><span className="sum-k">תיאור נוסף</span><span>{r.free_text}</span></div>}
+      {r.note && <div className="sum-row"><span className="sum-k">הערה</span><span>{r.note}</span></div>}
       {(r.contact_name || r.contact_phone || r.contact_email) && (
         <>
           <div className="divider" />

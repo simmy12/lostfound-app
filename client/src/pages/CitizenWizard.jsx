@@ -3,33 +3,46 @@ import { api } from "../api";
 
 const STEPS = ["פריט", "פרטים", "מיקום ותאריך", "סיכום"];
 const MAX_LINKED = 4;
+const MULTI_SELECT_CAP = 2;
+
+function attrLabel(attr) {
+  if (attr.name === "צבע") return "צבע עיקרי (עד 2 צבעים לבחירה)";
+  return attr.name;
+}
 
 // value shapes stored in an `answers` map (attribute_id -> value):
 //   single: { attribute_id, value_id? , isOther?, free_text? }
-//   multi:  { attribute_id, value_ids: [...], isOther?, free_text? }
+//   multi:  { attribute_id, value_ids: [...] (max 2), isOther?, free_text? }
 //   text/number/date: { attribute_id, free_text }
 function AttributeField({ attr, value, onChange }) {
   if (attr.input_type === "multi" && attr.values?.length) {
     const selected = value?.value_ids || [];
     const isOther = !!value?.isOther;
+    const atCap = selected.length + (isOther ? 1 : 0) >= MULTI_SELECT_CAP;
     return (
       <div>
         <div className="opts">
-          {attr.values.map((v) => (
-            <button
-              key={v.id}
-              type="button"
-              className={"opt-btn" + (selected.includes(v.id) ? " sel" : "")}
-              onClick={() => {
-                const next = selected.includes(v.id) ? selected.filter((id) => id !== v.id) : [...selected, v.id];
-                onChange({ attribute_id: attr.id, value_ids: next, isOther, free_text: value?.free_text });
-              }}
-            >
-              {v.value}
-            </button>
-          ))}
+          {attr.values.map((v) => {
+            const isSel = selected.includes(v.id);
+            const disabled = !isSel && atCap;
+            return (
+              <button
+                key={v.id}
+                type="button"
+                disabled={disabled}
+                className={"opt-btn" + (isSel ? " sel" : "")}
+                onClick={() => {
+                  const next = isSel ? selected.filter((id) => id !== v.id) : [...selected, v.id];
+                  onChange({ attribute_id: attr.id, value_ids: next, isOther, free_text: value?.free_text });
+                }}
+              >
+                {v.value}
+              </button>
+            );
+          })}
           <button
             type="button"
+            disabled={!isOther && atCap}
             className={"opt-btn" + (isOther ? " sel" : "")}
             onClick={() => onChange({ attribute_id: attr.id, value_ids: selected, isOther: !isOther, free_text: value?.free_text })}
           >
@@ -128,23 +141,19 @@ function flattenAnswers(answers) {
   return out;
 }
 
-// A self-contained category -> sub -> item -> attributes picker, used for container / contents /
-// nearby items. Reports its current {item_id, item_answers} up to the parent on every change.
-// lockMainName: when set (the "was this inside something?" flow), the main category is pre-set
-// to that name and never shown — we already know a container is a bag/wallet/suitcase/case.
-// allowNestedContents: when set (also only the "was this inside something?" flow), and the chosen
-// container item can itself contain things, offer adding up to 3 more items found in that same
-// container (the original item already takes up one of its 4 slots).
-function SubReportPicker({ categories, label, onChange, onRemove, lockMainName, allowNestedContents }) {
+// Lets the reporter find an item either by browsing category -> sub-category -> item, or by
+// typing a free-text search across the whole catalog — one method at a time, toggled by a tab bar.
+// lockMainName: when set, the main category is pre-set to that name and the toggle/category step
+// for it is skipped (used by the "was this inside something?" flow, which is always a bag/case).
+// Reports the chosen item ({id, name}) up via onSelect; null when nothing is chosen (yet).
+function ItemPicker({ categories, lockMainName, onSelect, selectedItemId }) {
   const lockedMain = lockMainName ? categories.find((m) => m.name === lockMainName) : null;
+  const [mode, setMode] = useState("category");
   const [mainId, setMainId] = useState(lockedMain?.id || null);
   const [subId, setSubId] = useState(null);
   const [items, setItems] = useState([]);
-  const [itemId, setItemId] = useState(null);
-  const [itemMeta, setItemMeta] = useState(null);
-  const [itemAttrs, setItemAttrs] = useState([]);
-  const [answers, setAnswers] = useState({});
-  const [nestedContents, setNestedContents] = useState([]);
+  const [query, setQuery] = useState("");
+  const [searchResults, setSearchResults] = useState([]);
 
   useEffect(() => {
     if (lockedMain && mainId !== lockedMain.id) setMainId(lockedMain.id);
@@ -163,37 +172,140 @@ function SubReportPicker({ categories, label, onChange, onRemove, lockMainName, 
   useEffect(() => {
     if (subId) api.getItems(subId).then(setItems);
     else setItems([]);
-    setItemId(null);
   }, [subId]);
 
   useEffect(() => {
-    if (items.length === 1) setItemId(items[0].id);
+    if (items.length === 1) onSelect(items[0]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [items]);
 
   useEffect(() => {
-    if (itemId) {
-      api.getItemAttributes(itemId).then(setItemAttrs);
-      if (allowNestedContents) api.getItem(itemId).then(setItemMeta);
+    const q = query.trim();
+    if (mode !== "search" || !q) {
+      setSearchResults([]);
+      return;
+    }
+    const t = setTimeout(() => { api.searchItems(q).then(setSearchResults); }, 300);
+    return () => clearTimeout(t);
+  }, [query, mode]);
+
+  function switchMode(next) {
+    if (next === mode) return;
+    setMode(next);
+    setMainId(lockedMain?.id || null);
+    setSubId(null);
+    setQuery("");
+    setSearchResults([]);
+    onSelect(null);
+  }
+
+  return (
+    <>
+      <div className="q-block">
+        <div className="side-toggle" style={{ maxWidth: 300 }}>
+          <button type="button" className={mode === "category" ? "act" : ""} onClick={() => switchMode("category")}>לפי קטגוריה</button>
+          <button type="button" className={mode === "search" ? "act" : ""} onClick={() => switchMode("search")}>חיפוש חופשי</button>
+        </div>
+      </div>
+
+      {mode === "category" && (
+        <>
+          {!lockedMain && (
+            <div className="q-block">
+              <label>קטגוריה ראשית</label>
+              <select value={mainId || ""} onChange={(e) => { setMainId(Number(e.target.value) || null); setSubId(null); onSelect(null); }}>
+                <option value="">— בחר קטגוריה —</option>
+                {categories.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+              </select>
+            </div>
+          )}
+          {mainId && subs.length > 1 && (
+            <div className="q-block">
+              <label>תת-קטגוריה</label>
+              <select value={subId || ""} onChange={(e) => { setSubId(Number(e.target.value) || null); onSelect(null); }}>
+                <option value="">— בחר תת-קטגוריה —</option>
+                {subs.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+              </select>
+            </div>
+          )}
+          {subId && items.length > 1 && (
+            <div className="q-block">
+              <label>פריט</label>
+              <select
+                value={selectedItemId || ""}
+                onChange={(e) => onSelect(items.find((it) => it.id === Number(e.target.value)) || null)}
+              >
+                <option value="">— בחר פריט —</option>
+                {items.map((it) => <option key={it.id} value={it.id}>{it.name}</option>)}
+              </select>
+            </div>
+          )}
+        </>
+      )}
+
+      {mode === "search" && (
+        <div className="q-block">
+          <label>חיפוש פריט לפי שם</label>
+          <input type="text" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="הקלד/י שם פריט..." />
+          {searchResults.length > 0 && (
+            <div className="opts">
+              {searchResults.map((it) => (
+                <button
+                  type="button"
+                  key={it.id}
+                  className={"opt-btn" + (selectedItemId === it.id ? " sel" : "")}
+                  onClick={() => onSelect(it)}
+                >
+                  {it.name} <span style={{ opacity: 0.6, fontSize: 11 }}>({it.sub_name})</span>
+                </button>
+              ))}
+            </div>
+          )}
+          {query.trim() && !searchResults.length && <p className="muted">אין תוצאות.</p>}
+        </div>
+      )}
+    </>
+  );
+}
+
+// A self-contained item picker + attributes card, used for container / contents / nearby items.
+// Reports its current {item_id, item_answers} up to the parent on every change.
+// lockMainName: when set (the "was this inside something?" flow), the main category is pre-set
+// to that name and never shown — we already know a container is a bag/wallet/suitcase/case.
+// allowNestedContents: when set (also only the "was this inside something?" flow), and the chosen
+// container item can itself contain things, offer adding up to 3 more items found in that same
+// container (the original item already takes up one of its 4 slots).
+function SubReportPicker({ categories, label, onChange, onRemove, lockMainName, allowNestedContents }) {
+  const [item, setItem] = useState(null); // {id, name}
+  const [itemMeta, setItemMeta] = useState(null);
+  const [itemAttrs, setItemAttrs] = useState([]);
+  const [answers, setAnswers] = useState({});
+  const [nestedContents, setNestedContents] = useState([]);
+
+  useEffect(() => {
+    if (item) {
+      api.getItemAttributes(item.id).then(setItemAttrs);
+      if (allowNestedContents) api.getItem(item.id).then(setItemMeta);
     } else {
       setItemAttrs([]);
       setItemMeta(null);
     }
     setAnswers({});
     setNestedContents([]);
-  }, [itemId]);
+  }, [item?.id]);
 
   useEffect(() => {
     onChange(
-      itemId
+      item
         ? {
-            item_id: itemId,
+            item_id: item.id,
             item_answers: flattenAnswers(answers),
             contents: nestedContents.filter((c) => c.value).map((c) => c.value),
           }
         : null
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [itemId, answers, nestedContents]);
+  }, [item?.id, answers, nestedContents]);
 
   return (
     <div className="card" style={{ marginTop: 10, background: "#f8fafc" }}>
@@ -202,40 +314,16 @@ function SubReportPicker({ categories, label, onChange, onRemove, lockMainName, 
           <span className="muted">{label}</span>
           {onRemove && <button type="button" className="btn btn-sm" onClick={onRemove}>✕ הסר</button>}
         </div>
-        {!lockedMain && (
-          <div className="q-block">
-            <label>קטגוריה ראשית</label>
-            <select value={mainId || ""} onChange={(e) => { setMainId(Number(e.target.value) || null); setSubId(null); }}>
-              <option value="">— בחר קטגוריה —</option>
-              {categories.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
-            </select>
-          </div>
-        )}
-        {mainId && subs.length > 1 && (
-          <div className="q-block">
-            <label>תת-קטגוריה</label>
-            <select value={subId || ""} onChange={(e) => setSubId(Number(e.target.value) || null)}>
-              <option value="">— בחר תת-קטגוריה —</option>
-              {subs.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-            </select>
-          </div>
-        )}
-        {subId && items.length > 1 && (
-          <div className="q-block">
-            <label>פריט</label>
-            <select value={itemId || ""} onChange={(e) => setItemId(Number(e.target.value) || null)}>
-              <option value="">— בחר פריט —</option>
-              {items.map((it) => <option key={it.id} value={it.id}>{it.name}</option>)}
-            </select>
-          </div>
-        )}
-        {itemId && itemAttrs.map((attr, i) => (
+
+        <ItemPicker categories={categories} lockMainName={lockMainName} selectedItemId={item?.id} onSelect={setItem} />
+
+        {item && itemAttrs.map((attr, i) => (
           <div className="q-block" key={attr.id}>
-            <div className="q-label"><span className="q-num">{i + 1}</span>{attr.name}</div>
+            <div className="q-label"><span className="q-num">{i + 1}</span>{attrLabel(attr)}</div>
             <AttributeField attr={attr} value={answers[attr.id]} onChange={(a) => setAnswers((p) => ({ ...p, [attr.id]: a }))} />
           </div>
         ))}
-        {itemId && !itemAttrs.length && <p className="muted">לפריט זה אין שאלות נוספות.</p>}
+        {item && !itemAttrs.length && <p className="muted">לפריט זה אין שאלות נוספות.</p>}
 
         {allowNestedContents && itemMeta?.can_contain_items && (
           <div style={{ border: "1px dashed var(--border)", borderRadius: 8, padding: 10, marginTop: 10 }}>
@@ -257,19 +345,27 @@ function SubReportPicker({ categories, label, onChange, onRemove, lockMainName, 
 
 function LinkedItemsList({ title, prompt, hint, items, setItems, categories, lockMainName, allowNestedContents, maxItems = MAX_LINKED }) {
   const [asking, setAsking] = useState(items.length > 0 ? true : null);
+
+  // when only one item will ever be added (e.g. the container), skip the extra "+ add" click —
+  // go straight to the picker as soon as the reporter answers "yes"
+  function answerYes() {
+    setAsking(true);
+    if (maxItems === 1 && items.length === 0) setItems([{ key: Date.now() + Math.random(), value: null }]);
+  }
+
   return (
     <div className="q-block">
       <div className="q-label">{prompt}</div>
       {asking == null && (
         <div className="opts">
-          <button type="button" className="opt-btn" onClick={() => setAsking(true)}>כן</button>
+          <button type="button" className="opt-btn" onClick={answerYes}>כן</button>
           <button type="button" className="opt-btn" onClick={() => { setAsking(false); setItems([]); }}>לא</button>
         </div>
       )}
       {asking === false && (
         <div className="opts">
           <button type="button" className="opt-btn sel" onClick={() => setAsking(null)}>לא</button>
-          <button type="button" className="opt-btn" onClick={() => setAsking(true)}>כן</button>
+          <button type="button" className="opt-btn" onClick={answerYes}>כן</button>
         </div>
       )}
       {asking === true && (
@@ -286,7 +382,7 @@ function LinkedItemsList({ title, prompt, hint, items, setItems, categories, loc
               lockMainName={lockMainName}
               allowNestedContents={allowNestedContents}
               onChange={(val) => setItems((prev) => prev.map((x, idx) => (idx === i ? { ...x, value: val } : x)))}
-              onRemove={() => setItems((prev) => prev.filter((_, idx) => idx !== i))}
+              onRemove={maxItems === 1 ? undefined : () => setItems((prev) => prev.filter((_, idx) => idx !== i))}
             />
           ))}
           {items.length < maxItems && (
@@ -309,15 +405,13 @@ export default function CitizenWizard() {
   const [step, setStep] = useState(0);
   const [type, setType] = useState("lost");
   const [categories, setCategories] = useState([]);
-  const [mainId, setMainId] = useState(null);
-  const [subId, setSubId] = useState(null);
-  const [items, setItems] = useState([]);
-  const [itemId, setItemId] = useState(null);
+  const [item, setItem] = useState(null); // {id, name}
   const [itemMeta, setItemMeta] = useState(null); // { can_be_contained, can_have_nearby, can_contain_items }
   const [itemAttrs, setItemAttrs] = useState([]);
   const [universalAttrs, setUniversalAttrs] = useState([]);
   const [answers, setAnswers] = useState({}); // attribute_id -> value (item + universal together)
-  const [freeText, setFreeText] = useState("");
+  const [freeText, setFreeText] = useState(""); // "תיאור נוסף"
+  const [note, setNote] = useState(""); // "הערה"
   const [contact, setContact] = useState({ contact_name: "", contact_phone: "", contact_email: "" });
   const [submitted, setSubmitted] = useState(null);
 
@@ -327,25 +421,10 @@ export default function CitizenWizard() {
 
   useEffect(() => { api.getCategories().then(setCategories); }, []);
   useEffect(() => { api.getUniversalAttributes().then(setUniversalAttrs); }, []);
-  // skip a step when it has only one possible choice — there's nothing to actually pick
   useEffect(() => {
-    const main = categories.find((m) => m.id === mainId);
-    const subs = main?.subs || [];
-    if (subs.length === 1 && subId !== subs[0].id) setSubId(subs[0].id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mainId, categories]);
-  useEffect(() => {
-    if (subId) api.getItems(subId).then(setItems);
-    else setItems([]);
-    setItemId(null);
-  }, [subId]);
-  useEffect(() => {
-    if (items.length === 1) setItemId(items[0].id);
-  }, [items]);
-  useEffect(() => {
-    if (itemId) {
-      api.getItemAttributes(itemId).then(setItemAttrs);
-      api.getItem(itemId).then(setItemMeta);
+    if (item) {
+      api.getItemAttributes(item.id).then(setItemAttrs);
+      api.getItem(item.id).then(setItemMeta);
     } else {
       setItemAttrs([]);
       setItemMeta(null);
@@ -353,12 +432,10 @@ export default function CitizenWizard() {
     setContents([]);
     setContainerItems([]);
     setNearbyItems([]);
-  }, [itemId]);
+  }, [item?.id]);
 
-  const main = categories.find((m) => m.id === mainId);
-  const subs = main?.subs || [];
   const setAnswer = (a) => setAnswers((prev) => ({ ...prev, [a.attribute_id]: a }));
-  const itemName = items.find((it) => it.id === itemId)?.name || "הפריט";
+  const itemName = item?.name || "הפריט";
 
   async function submit() {
     const itemAttrIds = new Set(itemAttrs.map((a) => a.id));
@@ -367,8 +444,9 @@ export default function CitizenWizard() {
 
     const payload = {
       type,
-      item_id: itemId,
+      item_id: item.id,
       free_text: freeText,
+      note,
       ...contact,
       item_answers: flattenAnswers(pick(itemAttrIds)),
       universal_answers: flattenAnswers(pick(universalAttrIds)),
@@ -422,37 +500,11 @@ export default function CitizenWizard() {
               </div>
             </div>
 
-            <div className="q-block">
-              <label>קטגוריה ראשית</label>
-              <select value={mainId || ""} onChange={(e) => { setMainId(Number(e.target.value) || null); setSubId(null); }}>
-                <option value="">— בחר קטגוריה —</option>
-                {categories.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
-              </select>
-            </div>
-
-            {mainId && subs.length > 1 && (
-              <div className="q-block">
-                <label>תת-קטגוריה</label>
-                <select value={subId || ""} onChange={(e) => setSubId(Number(e.target.value) || null)}>
-                  <option value="">— בחר תת-קטגוריה —</option>
-                  {subs.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-                </select>
-              </div>
-            )}
-
-            {subId && items.length > 1 && (
-              <div className="q-block">
-                <label>פריט</label>
-                <select value={itemId || ""} onChange={(e) => setItemId(Number(e.target.value) || null)}>
-                  <option value="">— בחר פריט —</option>
-                  {items.map((it) => <option key={it.id} value={it.id}>{it.name}</option>)}
-                </select>
-              </div>
-            )}
+            <ItemPicker categories={categories} selectedItemId={item?.id} onSelect={setItem} />
 
             <div className="form-actions">
               <span />
-              <button className="btn btn-pr btn-lg" disabled={!itemId} onClick={() => setStep(1)}>המשך ←</button>
+              <button className="btn btn-pr btn-lg" disabled={!item} onClick={() => setStep(1)}>המשך ←</button>
             </div>
           </div>
         </div>
@@ -465,7 +517,7 @@ export default function CitizenWizard() {
             {itemAttrs.length === 0 && <p className="muted">לפריט זה אין שאלות נוספות.</p>}
             {itemAttrs.map((attr, i) => (
               <div className="q-block" key={attr.id}>
-                <div className="q-label"><span className="q-num">{i + 1}</span>{attr.name}</div>
+                <div className="q-label"><span className="q-num">{i + 1}</span>{attrLabel(attr)}</div>
                 <AttributeField attr={attr} value={answers[attr.id]} onChange={setAnswer} />
               </div>
             ))}
@@ -508,8 +560,12 @@ export default function CitizenWizard() {
             )}
 
             <div className="q-block">
-              <label>הערות נוספות (אופציונלי)</label>
+              <label>תיאור נוסף</label>
               <textarea value={freeText} onChange={(e) => setFreeText(e.target.value)} placeholder="פרטים נוספים שיכולים לעזור לזהות את הפריט..." />
+            </div>
+            <div className="q-block">
+              <label>הערה</label>
+              <textarea value={note} onChange={(e) => setNote(e.target.value)} placeholder="הערה נוספת..." />
             </div>
             <div className="form-actions">
               <button className="btn" onClick={() => setStep(0)}>→ חזרה</button>
@@ -545,7 +601,7 @@ export default function CitizenWizard() {
               <div className="sum-row"><span className="sum-k">סוג</span><span>{type === "lost" ? "אבדה" : "מציאה"}</span></div>
               {itemAttrs.map((attr) => answers[attr.id] && (
                 <div className="sum-row" key={attr.id}>
-                  <span className="sum-k">{attr.name}</span>
+                  <span className="sum-k">{attrLabel(attr)}</span>
                   <span>
                     {answers[attr.id].isOther
                       ? answers[attr.id].free_text
@@ -561,7 +617,8 @@ export default function CitizenWizard() {
                   <span>{attr.values?.find((v) => v.id === answers[attr.id].value_id)?.value || answers[attr.id].free_text}</span>
                 </div>
               ))}
-              {freeText && <div className="sum-row"><span className="sum-k">הערות</span><span>{freeText}</span></div>}
+              {freeText && <div className="sum-row"><span className="sum-k">תיאור נוסף</span><span>{freeText}</span></div>}
+              {note && <div className="sum-row"><span className="sum-k">הערה</span><span>{note}</span></div>}
               {contents.filter((c) => c.value).length > 0 && (
                 <div className="sum-row"><span className="sum-k">תכולה שדווחה בנפרד</span><span>{contents.length} פריטים</span></div>
               )}
