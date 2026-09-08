@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
+import { formatAnswerValue } from "../format";
 
 const STEPS = ["פריט", "פרטים", "מיקום ותאריך", "סיכום"];
 const MAX_LINKED = 4;
@@ -606,14 +607,14 @@ export default function CitizenWizard() {
                       ? answers[attr.id].free_text
                       : answers[attr.id].value_ids
                         ? attr.values.filter((v) => answers[attr.id].value_ids.includes(v.id)).map((v) => v.value).join(", ")
-                        : attr.values?.find((v) => v.id === answers[attr.id].value_id)?.value || answers[attr.id].free_text}
+                        : attr.values?.find((v) => v.id === answers[attr.id].value_id)?.value || formatAnswerValue(attr.name, answers[attr.id].free_text)}
                   </span>
                 </div>
               ))}
               {universalAttrs.map((attr) => answers[attr.id] && (
                 <div className="sum-row" key={attr.id}>
                   <span className="sum-k">{attr.name}</span>
-                  <span>{attr.values?.find((v) => v.id === answers[attr.id].value_id)?.value || answers[attr.id].free_text}</span>
+                  <span>{attr.values?.find((v) => v.id === answers[attr.id].value_id)?.value || formatAnswerValue(attr.name, answers[attr.id].free_text)}</span>
                 </div>
               ))}
               {freeText && <div className="sum-row"><span className="sum-k">תיאור נוסף</span><span>{freeText}</span></div>}

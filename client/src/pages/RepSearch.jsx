@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
+import { formatAnswerValue } from "../format";
 
 function fillClass(score) {
   if (score >= 75) return "fill-hi";
@@ -59,7 +60,7 @@ function ReportDetail({ r }) {
       {r.answers?.map((a) => (
         <div className="sum-row" key={a.attribute_id}>
           <span className="sum-k">{a.attribute_name}</span>
-          <span>{a.value || a.free_text || "—"}</span>
+          <span>{a.value || formatAnswerValue(a.attribute_name, a.free_text) || "—"}</span>
         </div>
       ))}
       {r.free_text && <div className="sum-row"><span className="sum-k">תיאור נוסף</span><span>{r.free_text}</span></div>}
@@ -143,7 +144,7 @@ export default function RepSearch() {
 
   const rows = [];
   if (detail && compareDetail) {
-    const byName = (r) => Object.fromEntries(r.answers.map((a) => [a.attribute_name, a.value || a.free_text]));
+    const byName = (r) => Object.fromEntries(r.answers.map((a) => [a.attribute_name, a.value || formatAnswerValue(a.attribute_name, a.free_text)]));
     const dMap = byName(detail);
     const cMap = byName(compareDetail);
     const names = new Set([...Object.keys(dMap), ...Object.keys(cMap)]);
