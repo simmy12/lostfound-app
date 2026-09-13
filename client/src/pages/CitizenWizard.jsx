@@ -11,12 +11,53 @@ function attrLabel(attr) {
   return attr.name;
 }
 
+// a plain yes/no gate (exactly "כן" and "לא") stays a strict single choice — picking both at
+// once wouldn't mean anything. Every other choice-list question allows up to MULTI_SELECT_CAP.
+function isYesNo(attr) {
+  const vals = attr.values?.map((v) => v.value) || [];
+  return vals.length === 2 && vals.includes("כן") && vals.includes("לא");
+}
+
 // value shapes stored in an `answers` map (attribute_id -> value):
-//   single: { attribute_id, value_id? , isOther?, free_text? }
-//   multi:  { attribute_id, value_ids: [...] (max 2), isOther?, free_text? }
+//   choice (up to 2): { attribute_id, value_ids: [...] (max 2), isOther?, free_text? }
+//   strict yes/no:    { attribute_id, value_id? , isOther?, free_text? }
 //   text/number/date: { attribute_id, free_text }
 function AttributeField({ attr, value, onChange }) {
-  if (attr.input_type === "multi" && attr.values?.length) {
+  if (attr.values?.length && isYesNo(attr)) {
+    const isOther = !!value?.isOther;
+    return (
+      <div>
+        <div className="opts">
+          {attr.values.map((v) => (
+            <button
+              key={v.id}
+              type="button"
+              className={"opt-btn" + (!isOther && value?.value_id === v.id ? " sel" : "")}
+              onClick={() => onChange({ attribute_id: attr.id, value_id: v.id })}
+            >
+              {v.value}
+            </button>
+          ))}
+          <button
+            type="button"
+            className={"opt-btn" + (isOther ? " sel" : "")}
+            onClick={() => onChange({ attribute_id: attr.id, isOther: true, free_text: value?.free_text || "" })}
+          >
+            אחר
+          </button>
+        </div>
+        {isOther && (
+          <input
+            type="text"
+            placeholder="פרט/י..."
+            value={value?.free_text || ""}
+            onChange={(e) => onChange({ attribute_id: attr.id, isOther: true, free_text: e.target.value })}
+          />
+        )}
+      </div>
+    );
+  }
+  if (attr.values?.length) {
     const selected = value?.value_ids || [];
     const isOther = !!value?.isOther;
     const atCap = selected.length + (isOther ? 1 : 0) >= MULTI_SELECT_CAP;
@@ -56,40 +97,6 @@ function AttributeField({ attr, value, onChange }) {
             placeholder="פרט/י..."
             value={value?.free_text || ""}
             onChange={(e) => onChange({ attribute_id: attr.id, value_ids: selected, isOther: true, free_text: e.target.value })}
-          />
-        )}
-      </div>
-    );
-  }
-  if (attr.input_type === "single" && attr.values?.length) {
-    const isOther = !!value?.isOther;
-    return (
-      <div>
-        <div className="opts">
-          {attr.values.map((v) => (
-            <button
-              key={v.id}
-              type="button"
-              className={"opt-btn" + (!isOther && value?.value_id === v.id ? " sel" : "")}
-              onClick={() => onChange({ attribute_id: attr.id, value_id: v.id })}
-            >
-              {v.value}
-            </button>
-          ))}
-          <button
-            type="button"
-            className={"opt-btn" + (isOther ? " sel" : "")}
-            onClick={() => onChange({ attribute_id: attr.id, isOther: true, free_text: value?.free_text || "" })}
-          >
-            אחר
-          </button>
-        </div>
-        {isOther && (
-          <input
-            type="text"
-            placeholder="פרט/י..."
-            value={value?.free_text || ""}
-            onChange={(e) => onChange({ attribute_id: attr.id, isOther: true, free_text: e.target.value })}
           />
         )}
       </div>

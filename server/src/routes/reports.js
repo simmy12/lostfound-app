@@ -275,7 +275,6 @@ async function computeMatches(reportId) {
     [base.item_id]
   );
   const weightByAttr = new Map(weightsR.rows.map((w) => [w.attribute_id, w.weight]));
-  const typeByAttr = new Map(weightsR.rows.map((w) => [w.attribute_id, w.input_type]));
 
   // attribute_id -> Set of value tokens ("v:<id>" for a picked value, "t:<text>" for free text)
   async function valuesFor(rid) {
@@ -292,16 +291,13 @@ async function computeMatches(reportId) {
     return map;
   }
 
-  function attrMatches(attrId, baseSet, candSet) {
+  // every choice attribute (yes/no gates aside, which never reach here with >1 value) can now
+  // carry up to 2 selected values — any shared value between the two sides counts as a full
+  // match on that field, same logic regardless of how many values either side picked.
+  function attrMatches(baseSet, candSet) {
     if (!candSet) return false;
-    if (typeByAttr.get(attrId) === "multi") {
-      for (const t of baseSet) if (candSet.has(t)) return true; // any overlap = full match
-      return false;
-    }
-    // single-select (or text): full-set equality (in practice one value each)
-    if (baseSet.size !== candSet.size) return false;
-    for (const t of baseSet) if (!candSet.has(t)) return false;
-    return true;
+    for (const t of baseSet) if (candSet.has(t)) return true;
+    return false;
   }
 
   const baseValues = await valuesFor(reportId);
@@ -314,7 +310,7 @@ async function computeMatches(reportId) {
       const baseSet = baseValues.get(attrId);
       if (!baseSet || !baseSet.size) continue;
       possible += weight;
-      if (attrMatches(attrId, baseSet, candValues.get(attrId))) earned += weight;
+      if (attrMatches(baseSet, candValues.get(attrId))) earned += weight;
     }
     const score = possible > 0 ? Math.round((earned / possible) * 100) : 0;
     results.push({ report_id: cand.id, score });
