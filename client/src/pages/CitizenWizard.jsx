@@ -296,7 +296,7 @@ function ContainerPicker({ onSelect, selectedItemId }) {
 // allowNestedContents: when set (also only the "was this inside something?" flow), and the chosen
 // container item can itself contain things, offer adding up to 3 more items found in that same
 // container (the original item already takes up one of its 4 slots).
-function SubReportPicker({ categories, label, onChange, onRemove, containerMode, allowNestedContents }) {
+function SubReportPicker({ categories, label, onChange, onRemove, containerMode, allowNestedContents, originalItemName }) {
   const [item, setItem] = useState(null); // {id, name}
   const [itemMeta, setItemMeta] = useState(null);
   const [itemAttrs, setItemAttrs] = useState([]);
@@ -355,14 +355,19 @@ function SubReportPicker({ categories, label, onChange, onRemove, containerMode,
 
         {allowNestedContents && itemMeta?.can_contain_items && (
           <div style={{ border: "1px dashed var(--border)", borderRadius: 8, padding: 10, marginTop: 10 }}>
+            <div className="q-block">
+              <div className="q-label">תכולת ה{itemMeta.name || item.name}:</div>
+              <div className="sum-row"><span className="sum-k">1.</span><span>{originalItemName} (הפריט המקורי)</span></div>
+            </div>
             <LinkedItemsList
-              title="פריט נוסף"
+              title="פריט"
               prompt={`האם היו עוד דברים באותו ${itemMeta.name || "פריט"}?`}
               hint="ניתן להוסיף עד 3 פריטים נוספים שהיו יחד עם הפריט המקורי."
               items={nestedContents}
               setItems={setNestedContents}
               categories={categories}
               maxItems={MAX_LINKED - 1}
+              startNumber={2}
             />
           </div>
         )}
@@ -371,7 +376,7 @@ function SubReportPicker({ categories, label, onChange, onRemove, containerMode,
   );
 }
 
-function LinkedItemsList({ title, prompt, hint, items, setItems, categories, containerMode, allowNestedContents, maxItems = MAX_LINKED }) {
+function LinkedItemsList({ title, prompt, hint, items, setItems, categories, containerMode, allowNestedContents, originalItemName, maxItems = MAX_LINKED, startNumber = 1 }) {
   const [asking, setAsking] = useState(items.length > 0 ? true : null);
 
   // when only one item will ever be added (e.g. the container), skip the extra "+ add" click —
@@ -406,9 +411,10 @@ function LinkedItemsList({ title, prompt, hint, items, setItems, categories, con
             <SubReportPicker
               key={it.key}
               categories={categories}
-              label={maxItems === 1 ? title : `${title} ${i + 1}`}
+              label={maxItems === 1 ? title : `${title} ${startNumber + i}`}
               containerMode={containerMode}
               allowNestedContents={allowNestedContents}
+              originalItemName={originalItemName}
               onChange={(val) => setItems((prev) => prev.map((x, idx) => (idx === i ? { ...x, value: val } : x)))}
               onRemove={maxItems === 1 ? undefined : () => setItems((prev) => prev.filter((_, idx) => idx !== i))}
             />
@@ -567,6 +573,7 @@ export default function CitizenWizard() {
                 prompt="האם הפריט היה בתוך משהו (תיק, מזוודה וכד')?"
                 containerMode
                 allowNestedContents
+                originalItemName={itemName}
                 maxItems={1}
                 items={containerItems}
                 setItems={(fnOrVal) => setContainerItems((prev) => {
