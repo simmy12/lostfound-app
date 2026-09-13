@@ -17,6 +17,7 @@ export const api = {
   getItems: (subId) => req(`/subs/${subId}/items`),
   getItem: (itemId) => req(`/items/${itemId}`),
   searchItems: (q) => req(`/items/search?q=${encodeURIComponent(q)}`),
+  getContainers: () => req(`/items/containers`),
   getItemAttributes: (itemId) => req(`/items/${itemId}/attributes`),
   getUniversalAttributes: () => req("/universal-attributes"),
 

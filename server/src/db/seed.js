@@ -14,6 +14,22 @@ const CONTAINS_ITEMS_ATTR = "יש משהו בתוכו"; // used below to seed ca
                                               // the sheet had already flagged, beyond the bags category
 const BAGS_MAIN_CATEGORY = "מזוודות, תיקים, ארנקים, נרתיקים";
 
+// curated list offered in the "בתוך מה היה?" flow — things a lost item could plausibly be found
+// inside. Deliberately not "every bag" — hand-picked, not category-derived (a coat/stroller can
+// hold something too, and not every bag sub-type belongs on a short picker list).
+const CURATED_CONTAINERS = new Set([
+  "מזוודה",
+  "תיק צד",
+  "תיק גב/ילקוט",
+  "ארנק",
+  "נרתיק כרטיסים",
+  "נרתיק מצלמה",
+  "מעיל",
+  "ז'קט",
+  "עגלת תינוק",
+  "שקית עם מגוון פריטים",
+]);
+
 function weightFor(attrName) {
   if (attrName.includes("צבע")) return 15;
   if (attrName.includes("חברה")) return 12;
@@ -61,10 +77,11 @@ async function run() {
       const isBag = item.main === BAGS_MAIN_CATEGORY;
       const canContainItems = isBag || item.attrNames.includes(CONTAINS_ITEMS_ATTR);
       const canBeContained = !isBag;
+      const isCommonContainer = CURATED_CONTAINERS.has(item.name);
       await client.query(
-        `INSERT INTO items (id, sub_id, name, can_be_contained, can_have_nearby, can_contain_items)
-         VALUES ($1,$2,$3,$4,true,$5)`,
-        [item.id, subId, item.name, canBeContained, canContainItems]
+        `INSERT INTO items (id, sub_id, name, can_be_contained, can_have_nearby, can_contain_items, is_common_container)
+         VALUES ($1,$2,$3,$4,true,$5,$6)`,
+        [item.id, subId, item.name, canBeContained, canContainItems, isCommonContainer]
       );
     }
 

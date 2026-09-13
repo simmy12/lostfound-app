@@ -29,7 +29,8 @@ CREATE TABLE items (
   name              TEXT NOT NULL,
   can_be_contained  BOOLEAN NOT NULL DEFAULT true,  -- ask "was this inside something?" (e.g. false for a stroller)
   can_have_nearby   BOOLEAN NOT NULL DEFAULT true,  -- ask "were other items found/lost nearby?"
-  can_contain_items BOOLEAN NOT NULL DEFAULT false  -- ask "what was inside it?" (true for bags/suitcases etc.)
+  can_contain_items BOOLEAN NOT NULL DEFAULT false, -- ask "what was inside it?" (true for bags/suitcases etc.)
+  is_common_container BOOLEAN NOT NULL DEFAULT false -- offered in the curated "בתוך מה היה?" list
 );
 
 -- ===== Attributes (dynamic question bank) =====

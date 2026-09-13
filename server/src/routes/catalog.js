@@ -47,6 +47,13 @@ router.get("/items/search", asyncHandler(async (req, res) => {
   res.json(r.rows);
 }));
 
+// the curated, fixed list of "things something could be found inside" — the only options offered
+// in the "בתוך מה היה?" flow, deliberately not the full catalog.
+router.get("/items/containers", asyncHandler(async (req, res) => {
+  const r = await pool.query(`SELECT id, name FROM items WHERE is_common_container = true ORDER BY name`);
+  res.json(r.rows);
+}));
+
 router.get("/items/:itemId", asyncHandler(async (req, res) => {
   const itemId = parseId(req, res, "itemId");
   if (itemId == null) return;

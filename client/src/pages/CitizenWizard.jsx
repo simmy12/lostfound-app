@@ -151,22 +151,14 @@ function flattenAnswers(answers) {
 
 // Lets the reporter find an item either by browsing category -> sub-category -> item, or by
 // typing a free-text search across the whole catalog — one method at a time, toggled by a tab bar.
-// lockMainName: when set, the main category is pre-set to that name and the toggle/category step
-// for it is skipped (used by the "was this inside something?" flow, which is always a bag/case).
 // Reports the chosen item ({id, name}) up via onSelect; null when nothing is chosen (yet).
-function ItemPicker({ categories, lockMainName, onSelect, selectedItemId }) {
-  const lockedMain = lockMainName ? categories.find((m) => m.name === lockMainName) : null;
+function ItemPicker({ categories, searchLabel = "איזה פריט? התחל/י להקליד", onSelect, selectedItemId }) {
   const [mode, setMode] = useState("search"); // search first — it's the fastest path for most people
-  const [mainId, setMainId] = useState(lockedMain?.id || null);
+  const [mainId, setMainId] = useState(null);
   const [subId, setSubId] = useState(null);
   const [items, setItems] = useState([]);
   const [query, setQuery] = useState("");
   const [searchResults, setSearchResults] = useState([]);
-
-  useEffect(() => {
-    if (lockedMain && mainId !== lockedMain.id) setMainId(lockedMain.id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [lockedMain?.id]);
 
   const main = categories.find((m) => m.id === mainId);
   const subs = main?.subs || [];
@@ -200,7 +192,7 @@ function ItemPicker({ categories, lockMainName, onSelect, selectedItemId }) {
   function switchMode(next) {
     if (next === mode) return;
     setMode(next);
-    setMainId(lockedMain?.id || null);
+    setMainId(null);
     setSubId(null);
     setQuery("");
     setSearchResults([]);
@@ -214,15 +206,13 @@ function ItemPicker({ categories, lockMainName, onSelect, selectedItemId }) {
           <p className="info-note">
             <a href="#" onClick={(e) => { e.preventDefault(); switchMode("search"); }}>→ חזרה לחיפוש</a>
           </p>
-          {!lockedMain && (
-            <div className="q-block">
-              <label>קטגוריה ראשית</label>
-              <select value={mainId || ""} onChange={(e) => { setMainId(Number(e.target.value) || null); setSubId(null); onSelect(null); }}>
-                <option value="">— בחר קטגוריה —</option>
-                {categories.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
-              </select>
-            </div>
-          )}
+          <div className="q-block">
+            <label>קטגוריה ראשית</label>
+            <select value={mainId || ""} onChange={(e) => { setMainId(Number(e.target.value) || null); setSubId(null); onSelect(null); }}>
+              <option value="">— בחר קטגוריה —</option>
+              {categories.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+            </select>
+          </div>
           {mainId && subs.length > 1 && (
             <div className="q-block">
               <label>תת-קטגוריה</label>
@@ -249,7 +239,7 @@ function ItemPicker({ categories, lockMainName, onSelect, selectedItemId }) {
 
       {mode === "search" && (
         <div className="q-block">
-          <label>מה איבדת/מצאת? התחל/י להקליד</label>
+          <label>{searchLabel}</label>
           <input type="text" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="למשל: מעיל, ארנק, משקפיים..." autoFocus />
           {searchResults.length > 0 && (
             <div className="opts">
@@ -275,14 +265,38 @@ function ItemPicker({ categories, lockMainName, onSelect, selectedItemId }) {
   );
 }
 
+// A short, fixed list of "things something could be found inside" (curated in the database, not
+// derived from a category) — the only options offered by the "was this inside something?" flow.
+function ContainerPicker({ onSelect, selectedItemId }) {
+  const [options, setOptions] = useState([]);
+  useEffect(() => { api.getContainers().then(setOptions); }, []);
+  return (
+    <div className="q-block">
+      <label>בחר/י מהרשימה</label>
+      <div className="opts">
+        {options.map((it) => (
+          <button
+            type="button"
+            key={it.id}
+            className={"opt-btn" + (selectedItemId === it.id ? " sel" : "")}
+            onClick={() => onSelect(it)}
+          >
+            {it.name}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // A self-contained item picker + attributes card, used for container / contents / nearby items.
 // Reports its current {item_id, item_answers} up to the parent on every change.
-// lockMainName: when set (the "was this inside something?" flow), the main category is pre-set
-// to that name and never shown — we already know a container is a bag/wallet/suitcase/case.
+// containerMode: when set (the "was this inside something?" flow), the reporter picks from the
+// curated ContainerPicker list above instead of the full category/search ItemPicker.
 // allowNestedContents: when set (also only the "was this inside something?" flow), and the chosen
 // container item can itself contain things, offer adding up to 3 more items found in that same
 // container (the original item already takes up one of its 4 slots).
-function SubReportPicker({ categories, label, onChange, onRemove, lockMainName, allowNestedContents }) {
+function SubReportPicker({ categories, label, onChange, onRemove, containerMode, allowNestedContents }) {
   const [item, setItem] = useState(null); // {id, name}
   const [itemMeta, setItemMeta] = useState(null);
   const [itemAttrs, setItemAttrs] = useState([]);
@@ -322,8 +336,15 @@ function SubReportPicker({ categories, label, onChange, onRemove, lockMainName, 
           {onRemove && <button type="button" className="btn btn-sm" onClick={onRemove}>✕ הסר</button>}
         </div>
 
-        <ItemPicker categories={categories} lockMainName={lockMainName} selectedItemId={item?.id} onSelect={setItem} />
+        {containerMode ? (
+          <ContainerPicker selectedItemId={item?.id} onSelect={setItem} />
+        ) : (
+          <ItemPicker categories={categories} selectedItemId={item?.id} onSelect={setItem} />
+        )}
 
+        {item && containerMode && (
+          <p className="info-note">התכונות הבאות מתארות את ה{item.name}:</p>
+        )}
         {item && itemAttrs.map((attr, i) => (
           <div className="q-block" key={attr.id}>
             <div className="q-label"><span className="q-num">{i + 1}</span>{attrLabel(attr)}</div>
@@ -350,7 +371,7 @@ function SubReportPicker({ categories, label, onChange, onRemove, lockMainName, 
   );
 }
 
-function LinkedItemsList({ title, prompt, hint, items, setItems, categories, lockMainName, allowNestedContents, maxItems = MAX_LINKED }) {
+function LinkedItemsList({ title, prompt, hint, items, setItems, categories, containerMode, allowNestedContents, maxItems = MAX_LINKED }) {
   const [asking, setAsking] = useState(items.length > 0 ? true : null);
 
   // when only one item will ever be added (e.g. the container), skip the extra "+ add" click —
@@ -386,7 +407,7 @@ function LinkedItemsList({ title, prompt, hint, items, setItems, categories, loc
               key={it.key}
               categories={categories}
               label={maxItems === 1 ? title : `${title} ${i + 1}`}
-              lockMainName={lockMainName}
+              containerMode={containerMode}
               allowNestedContents={allowNestedContents}
               onChange={(val) => setItems((prev) => prev.map((x, idx) => (idx === i ? { ...x, value: val } : x)))}
               onRemove={maxItems === 1 ? undefined : () => setItems((prev) => prev.filter((_, idx) => idx !== i))}
@@ -507,7 +528,7 @@ export default function CitizenWizard() {
               </div>
             </div>
 
-            <ItemPicker categories={categories} selectedItemId={item?.id} onSelect={setItem} />
+            <ItemPicker categories={categories} searchLabel="מה איבדת/מצאת? התחל/י להקליד" selectedItemId={item?.id} onSelect={setItem} />
 
             <div className="form-actions">
               <span />
@@ -544,7 +565,7 @@ export default function CitizenWizard() {
               <LinkedItemsList
                 title="בתוך מה היה?"
                 prompt="האם הפריט היה בתוך משהו (תיק, מזוודה וכד')?"
-                lockMainName="מזוודות, תיקים, ארנקים, נרתיקים"
+                containerMode
                 allowNestedContents
                 maxItems={1}
                 items={containerItems}
