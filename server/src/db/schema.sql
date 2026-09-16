@@ -30,7 +30,8 @@ CREATE TABLE items (
   can_be_contained  BOOLEAN NOT NULL DEFAULT true,  -- ask "was this inside something?" (e.g. false for a stroller)
   can_have_nearby   BOOLEAN NOT NULL DEFAULT true,  -- ask "were other items found/lost nearby?"
   can_contain_items BOOLEAN NOT NULL DEFAULT false, -- ask "what was inside it?" (true for bags/suitcases etc.)
-  is_common_container BOOLEAN NOT NULL DEFAULT false -- offered in the curated "בתוך מה היה?" list
+  is_common_container BOOLEAN NOT NULL DEFAULT false, -- offered in the curated "בתוך מה היה?" list
+  is_other_placeholder BOOLEAN NOT NULL DEFAULT false -- the generic "אחר" item; picking it requires free text and queues the report for admin review
 );
 
 -- ===== Attributes (dynamic question bank) =====
@@ -76,6 +77,7 @@ CREATE TABLE reports (
   status         TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','matched','closed')),
   free_text      TEXT,  -- "תיאור נוסף"
   note           TEXT,  -- "הערה" — a second, separate free-text field
+  other_item_text TEXT, -- mandatory free text typed when item_id is the "אחר" placeholder — queues the report for admin review
   contact_name   TEXT,
   contact_phone  TEXT,
   contact_email  TEXT,

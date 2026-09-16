@@ -14,9 +14,10 @@ function parseId(req, res, name = "id") {
 }
 
 // Full category tree: main -> sub -> items
+// "אחר" always sorts last, regardless of where it'd otherwise fall alphabetically
 router.get("/categories", asyncHandler(async (req, res) => {
-  const mains = await pool.query("SELECT id, name FROM categories_main ORDER BY name");
-  const subs = await pool.query("SELECT id, main_id, name FROM categories_sub ORDER BY name");
+  const mains = await pool.query("SELECT id, name FROM categories_main ORDER BY (name = 'אחר'), name");
+  const subs = await pool.query("SELECT id, main_id, name FROM categories_sub ORDER BY (name = 'אחר'), name");
   const tree = mains.rows.map((m) => ({
     ...m,
     subs: subs.rows.filter((s) => s.main_id === m.id).map((s) => ({ id: s.id, name: s.name })),
@@ -58,7 +59,7 @@ router.get("/items/:itemId", asyncHandler(async (req, res) => {
   const itemId = parseId(req, res, "itemId");
   if (itemId == null) return;
   const r = await pool.query(
-    "SELECT id, name, can_be_contained, can_have_nearby, can_contain_items FROM items WHERE id = $1",
+    "SELECT id, name, can_be_contained, can_have_nearby, can_contain_items, is_other_placeholder FROM items WHERE id = $1",
     [itemId]
   );
   if (!r.rows.length) return res.status(404).json({ error: "not found" });

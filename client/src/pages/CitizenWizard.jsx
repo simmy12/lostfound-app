@@ -152,7 +152,7 @@ function flattenAnswers(answers) {
 // Lets the reporter find an item either by browsing category -> sub-category -> item, or by
 // typing a free-text search across the whole catalog — one method at a time, toggled by a tab bar.
 // Reports the chosen item ({id, name}) up via onSelect; null when nothing is chosen (yet).
-function ItemPicker({ categories, searchLabel = "איזה פריט? התחל/י להקליד", onSelect, selectedItemId }) {
+function ItemPicker({ categories, searchLabel = "איזה פריט?", onSelect, selectedItemId }) {
   const [mode, setMode] = useState("search"); // search first — it's the fastest path for most people
   const [mainId, setMainId] = useState(null);
   const [subId, setSubId] = useState(null);
@@ -255,10 +255,11 @@ function ItemPicker({ categories, searchLabel = "איזה פריט? התחל/י 
               ))}
             </div>
           )}
-          {query.trim() && !searchResults.length && <p className="muted">אין תוצאות.</p>}
-          <p className="info-note">
-            לא מוצא/ת? <a href="#" onClick={(e) => { e.preventDefault(); switchMode("category"); }}>בחר/י לפי קטגוריה</a>
-          </p>
+          {query.trim() && !searchResults.length && (
+            <p className="muted">
+              אין תוצאות. <a href="#" onClick={(e) => { e.preventDefault(); switchMode("category"); }}>בחר/י לפי קטגוריה</a>
+            </p>
+          )}
         </div>
       )}
     </>
@@ -440,10 +441,11 @@ export default function CitizenWizard() {
   const [type, setType] = useState("lost");
   const [categories, setCategories] = useState([]);
   const [item, setItem] = useState(null); // {id, name}
-  const [itemMeta, setItemMeta] = useState(null); // { can_be_contained, can_have_nearby, can_contain_items }
+  const [itemMeta, setItemMeta] = useState(null); // { can_be_contained, can_have_nearby, can_contain_items, is_other_placeholder }
   const [itemAttrs, setItemAttrs] = useState([]);
   const [universalAttrs, setUniversalAttrs] = useState([]);
   const [answers, setAnswers] = useState({}); // attribute_id -> value (item + universal together)
+  const [otherItemText, setOtherItemText] = useState(""); // mandatory when itemMeta.is_other_placeholder
   const [freeText, setFreeText] = useState(""); // "תיאור נוסף"
   const [note, setNote] = useState(""); // "הערה"
   const [contact, setContact] = useState({ contact_name: "", contact_phone: "", contact_email: "" });
@@ -466,6 +468,7 @@ export default function CitizenWizard() {
     setContents([]);
     setContainerItems([]);
     setNearbyItems([]);
+    setOtherItemText("");
   }, [item?.id]);
 
   const setAnswer = (a) => setAnswers((prev) => ({ ...prev, [a.attribute_id]: a }));
@@ -481,6 +484,7 @@ export default function CitizenWizard() {
       item_id: item.id,
       free_text: freeText,
       note,
+      other_item_text: itemMeta?.is_other_placeholder ? otherItemText.trim() : null,
       ...contact,
       item_answers: flattenAnswers(pick(itemAttrIds)),
       universal_answers: flattenAnswers(pick(universalAttrIds)),
@@ -521,24 +525,36 @@ export default function CitizenWizard() {
 
       {step === 0 && (
         <div className="card">
-          <div className="card-h">מה קרה?</div>
           <div className="card-b">
             <div className="type-card-row">
               <div className={"type-card" + (type === "lost" ? " act" : "")} onClick={() => setType("lost")}>
                 <div className="type-icon">🔍</div>
-                <div className="type-title">איבדתי חפץ</div>
+                <div className="type-title">אבידה</div>
               </div>
               <div className={"type-card" + (type === "found" ? " act" : "")} onClick={() => setType("found")}>
                 <div className="type-icon">📦</div>
-                <div className="type-title">מצאתי חפץ</div>
+                <div className="type-title">מציאה</div>
               </div>
             </div>
 
-            <ItemPicker categories={categories} searchLabel="מה איבדת/מצאת? התחל/י להקליד" selectedItemId={item?.id} onSelect={setItem} />
+            <ItemPicker categories={categories} searchLabel={type === "lost" ? "מה איבדתי" : "מה מצאתי"} selectedItemId={item?.id} onSelect={setItem} />
+
+            {itemMeta?.is_other_placeholder && (
+              <div className="q-block">
+                <label>מה בעצם {type === "lost" ? "איבדת" : "מצאת"}? (שדה חובה)</label>
+                <input type="text" value={otherItemText} onChange={(e) => setOtherItemText(e.target.value)} placeholder="פרט/י מה הפריט..." />
+              </div>
+            )}
 
             <div className="form-actions">
-              <span />
-              <button className="btn btn-pr btn-lg" disabled={!item} onClick={() => setStep(1)}>המשך ←</button>
+              <button className="btn" disabled>→ חזרה</button>
+              <button
+                className="btn btn-pr btn-lg"
+                disabled={!item || (itemMeta?.is_other_placeholder && !otherItemText.trim())}
+                onClick={() => setStep(1)}
+              >
+                המשך ←
+              </button>
             </div>
           </div>
         </div>

@@ -34,6 +34,7 @@ router.post("/reports", asyncHandler(async (req, res) => {
     item_id,
     free_text,
     note,
+    other_item_text,
     contact_name,
     contact_phone,
     contact_email,
@@ -48,15 +49,21 @@ router.post("/reports", asyncHandler(async (req, res) => {
     return res.status(400).json({ error: "type and item_id are required" });
   }
 
+  const itemR = await pool.query(`SELECT is_other_placeholder FROM items WHERE id = $1`, [item_id]);
+  if (!itemR.rows.length) return res.status(400).json({ error: "unknown item_id" });
+  if (itemR.rows[0].is_other_placeholder && !(other_item_text || "").trim()) {
+    return res.status(400).json({ error: "other_item_text is required when item_id is the generic \"אחר\" item" });
+  }
+
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
 
-    async function insertReport(itemId, answers) {
+    async function insertReport(itemId, answers, otherItemText) {
       const r = await client.query(
-        `INSERT INTO reports (type, item_id, free_text, note, contact_name, contact_phone, contact_email)
-         VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
-        [type, itemId, free_text || null, note || null, contact_name || null, contact_phone || null, contact_email || null]
+        `INSERT INTO reports (type, item_id, free_text, note, other_item_text, contact_name, contact_phone, contact_email)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`,
+        [type, itemId, free_text || null, note || null, otherItemText || null, contact_name || null, contact_phone || null, contact_email || null]
       );
       const reportId = r.rows[0].id;
       const allAnswers = [...answers, ...universal_answers];
@@ -71,7 +78,7 @@ router.post("/reports", asyncHandler(async (req, res) => {
       return reportId;
     }
 
-    const mainReportId = await insertReport(item_id, item_answers);
+    const mainReportId = await insertReport(item_id, item_answers, other_item_text);
 
     for (const c of contents.slice(0, MAX_LINKED)) {
       const contentReportId = await insertReport(c.item_id, c.item_answers || []);

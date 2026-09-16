@@ -1,6 +1,6 @@
 require("dotenv").config();
 const pool = require("./pool");
-const { buildCatalog } = require("./build-catalog");
+const { buildCatalog, FALLBACK_MAIN, FALLBACK_SUB } = require("./build-catalog");
 const { universal } = require("./seed-attributes");
 
 // Neither of these is loaded as a regular item_attribute — both are now control-flow questions
@@ -42,7 +42,7 @@ async function run() {
   const { tree, attrDefs, items, unmatched, treeOnlyCount } = buildCatalog();
   console.log(
     `catalog: ${items.length} items (${items.length - treeOnlyCount} with questions, ${treeOnlyCount} tree-only), ` +
-      `${attrDefs.size} attributes, ${unmatched.length} unmatched -> שונות`
+      `${attrDefs.size} attributes, ${unmatched.length} unmatched -> אחר`
   );
 
   const client = await pool.connect();
@@ -78,10 +78,11 @@ async function run() {
       const canContainItems = isBag || item.attrNames.includes(CONTAINS_ITEMS_ATTR);
       const canBeContained = !isBag;
       const isCommonContainer = CURATED_CONTAINERS.has(item.name);
+      const isOtherPlaceholder = item.main === FALLBACK_MAIN && item.sub === FALLBACK_SUB && item.name === FALLBACK_MAIN;
       await client.query(
-        `INSERT INTO items (id, sub_id, name, can_be_contained, can_have_nearby, can_contain_items, is_common_container)
-         VALUES ($1,$2,$3,$4,true,$5,$6)`,
-        [item.id, subId, item.name, canBeContained, canContainItems, isCommonContainer]
+        `INSERT INTO items (id, sub_id, name, can_be_contained, can_have_nearby, can_contain_items, is_common_container, is_other_placeholder)
+         VALUES ($1,$2,$3,$4,true,$5,$6,$7)`,
+        [item.id, subId, item.name, canBeContained, canContainItems, isCommonContainer, isOtherPlaceholder]
       );
     }
 
@@ -134,7 +135,7 @@ async function run() {
       `Seeded ${items.length} items, ${mainIds.size} main categories, ${subIds.size} sub categories, ${attrIds.size} attributes.`
     );
     if (unmatched.length) {
-      console.log(`\n${unmatched.length} items landed in שונות (no exact match in the category tree):`);
+      console.log(`\n${unmatched.length} items landed in אחר (no exact match in the category tree):`);
       console.log(unmatched.join(", "));
     }
   } catch (e) {

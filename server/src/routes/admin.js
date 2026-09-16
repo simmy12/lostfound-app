@@ -62,8 +62,8 @@ router.get("/admin/universal-attributes", asyncHandler(async (req, res) => {
 // ---- category management ----
 
 router.get("/admin/categories", asyncHandler(async (req, res) => {
-  const mains = await pool.query(`SELECT id, name FROM categories_main ORDER BY name`);
-  const subs = await pool.query(`SELECT id, main_id, name FROM categories_sub ORDER BY name`);
+  const mains = await pool.query(`SELECT id, name FROM categories_main ORDER BY (name = 'אחר'), name`);
+  const subs = await pool.query(`SELECT id, main_id, name FROM categories_sub ORDER BY (name = 'אחר'), name`);
   res.json(mains.rows.map((m) => ({ ...m, subs: subs.rows.filter((s) => s.main_id === m.id) })));
 }));
 
@@ -161,6 +161,64 @@ router.post("/admin/other-answers/promote", asyncHandler(async (req, res) => {
     await client.query("ROLLBACK");
     console.error(e);
     res.status(500).json({ error: "failed to promote value" });
+  } finally {
+    client.release();
+  }
+}));
+
+// ---- "אחר" item review: reports where the reporter couldn't find their item at all and typed
+// free text instead (items.is_other_placeholder). An admin either reassigns the report to an
+// existing item, or approves it by creating a new catalog item (in the category they pick) and
+// reassigning the report to it — either way the report leaves this list once its item_id changes.
+
+router.get("/admin/other-items", asyncHandler(async (req, res) => {
+  const r = await pool.query(
+    `SELECT r.id AS report_id, r.type, r.other_item_text, r.created_at
+     FROM reports r
+     JOIN items i ON i.id = r.item_id
+     WHERE i.is_other_placeholder = true
+       AND r.other_item_text IS NOT NULL AND trim(r.other_item_text) <> ''
+     ORDER BY r.created_at`
+  );
+  res.json(r.rows);
+}));
+
+// reassign the report to an existing catalog item
+router.post("/admin/other-items/:reportId/reassign", asyncHandler(async (req, res) => {
+  const { item_id } = req.body;
+  if (!item_id) return res.status(400).json({ error: "item_id is required" });
+  const r = await pool.query(`UPDATE reports SET item_id = $1 WHERE id = $2 RETURNING id`, [item_id, req.params.reportId]);
+  if (!r.rows.length) return res.status(404).json({ error: "not found" });
+  res.json({ ok: true });
+}));
+
+// approve: create a new catalog item in the chosen sub-category from the reporter's free text,
+// then reassign the report to it
+router.post("/admin/other-items/:reportId/approve", asyncHandler(async (req, res) => {
+  const { sub_id, name } = req.body;
+  if (!sub_id || !name) return res.status(400).json({ error: "sub_id and name are required" });
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const idR = await client.query(`SELECT COALESCE(MAX(id), 0) + 1 AS id FROM items`);
+    const newItemId = idR.rows[0].id;
+    await client.query(
+      `INSERT INTO items (id, sub_id, name, can_be_contained, can_have_nearby, can_contain_items)
+       VALUES ($1,$2,$3,true,true,false)`,
+      [newItemId, sub_id, name]
+    );
+    const r = await client.query(`UPDATE reports SET item_id = $1 WHERE id = $2 RETURNING id`, [newItemId, req.params.reportId]);
+    if (!r.rows.length) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({ error: "not found" });
+    }
+    await client.query("COMMIT");
+    res.status(201).json({ item_id: newItemId });
+  } catch (e) {
+    await client.query("ROLLBACK");
+    console.error(e);
+    res.status(500).json({ error: "failed to approve item" });
   } finally {
     client.release();
   }

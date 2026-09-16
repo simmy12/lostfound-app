@@ -10,22 +10,30 @@
 //
 // Items are placed in the tree by matching their NAME (normalized) against the tree's
 // item names — not by trusting the item sheet's own category columns, since those don't
-// always agree with the tree (see build report). Items with no match go to שונות/שונות.
+// always agree with the tree (see build report). Items with no match go to אחר/אחר.
+// The main category "אחר" is always flattened to a single sub ("אחר") — the citizen picker
+// skips the sub-category step whenever a main category has just one sub.
 
 const path = require("path");
 const XLSX = require("xlsx");
 
 const SOURCE_PATH = path.join(__dirname, "source-data", "mtziot-avidot.xlsx");
-const FALLBACK_MAIN = "שונות";
-const FALLBACK_SUB = "שונות";
+const FALLBACK_MAIN = "אחר";
+const FALLBACK_SUB = "אחר";
+
+function renameOther(s) {
+  return s === "שונות" ? "אחר" : s;
+}
 
 function normalize(s) {
   if (s == null) return "";
-  return String(s)
-    .replace(/ /g, " ")
-    .trim()
-    .replace(/\s+/g, " ")
-    .replace(/\s*\/\s*/g, "/");
+  return renameOther(
+    String(s)
+      .replace(/ /g, " ")
+      .trim()
+      .replace(/\s+/g, " ")
+      .replace(/\s*\/\s*/g, "/")
+  );
 }
 
 function singularPluralVariants(s) {
@@ -251,6 +259,12 @@ function buildCatalog() {
   }
   placedItems.push(...treeOnly);
 
+  // flatten the "אחר" main category to a single sub, regardless of how many subs the sheet's
+  // own tree gives it — the citizen picker skips the sub-category step only when there's one.
+  for (const it of placedItems) {
+    if (it.main === FALLBACK_MAIN) it.sub = FALLBACK_SUB;
+  }
+
   return { tree, attrDefs, items: placedItems, unmatched, treeOnlyCount: treeOnly.length };
 }
 
@@ -260,7 +274,7 @@ if (require.main === module) {
   for (const subs of tree.values()) subCount += subs.size;
   console.log(`mains: ${tree.size}, subs: ${subCount}`);
   console.log(`attributes defined: ${attrDefs.size}`);
-  console.log(`items total: ${items.length} (from attribute sheet: ${items.length - treeOnlyCount}, tree-only no questions: ${treeOnlyCount}), unmatched -> שונות: ${unmatched.length}`);
+  console.log(`items total: ${items.length} (from attribute sheet: ${items.length - treeOnlyCount}, tree-only no questions: ${treeOnlyCount}), unmatched -> אחר: ${unmatched.length}`);
   const dupIds = new Map();
   for (const it of items) dupIds.set(it.id, (dupIds.get(it.id) || 0) + 1);
   const dups = [...dupIds.entries()].filter(([, c]) => c > 1);
@@ -269,4 +283,4 @@ if (require.main === module) {
   console.log(unmatched.join("\n"));
 }
 
-module.exports = { buildCatalog };
+module.exports = { buildCatalog, FALLBACK_MAIN, FALLBACK_SUB };

@@ -49,4 +49,10 @@ export const api = {
   adminOtherAnswers: () => req("/admin/other-answers"),
   adminPromoteOther: (attributeId, text, retroactive) =>
     req("/admin/other-answers/promote", { method: "POST", body: JSON.stringify({ attribute_id: attributeId, text, retroactive }) }),
+
+  adminOtherItems: () => req("/admin/other-items"),
+  adminReassignOtherItem: (reportId, itemId) =>
+    req(`/admin/other-items/${reportId}/reassign`, { method: "POST", body: JSON.stringify({ item_id: itemId }) }),
+  adminApproveOtherItem: (reportId, subId, name) =>
+    req(`/admin/other-items/${reportId}/approve`, { method: "POST", body: JSON.stringify({ sub_id: subId, name }) }),
 };

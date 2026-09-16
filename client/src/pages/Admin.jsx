@@ -40,6 +40,124 @@ function OtherAnswersPanel() {
   );
 }
 
+// One report where the reporter couldn't find their item and typed free text instead
+// (items.is_other_placeholder). The admin either reassigns it to an existing item, or approves
+// it by creating a new item (in a category they pick) and reassigning the report to that.
+function OtherItemRow({ row, categories, onDone }) {
+  const [mode, setMode] = useState(null); // null | "existing" | "new"
+  const [mainId, setMainId] = useState(null);
+  const [subId, setSubId] = useState(null);
+  const [items, setItems] = useState([]);
+  const [itemId, setItemId] = useState(null);
+  const [name, setName] = useState(row.other_item_text);
+
+  const main = categories.find((m) => m.id === mainId);
+  const subs = main?.subs || [];
+
+  useEffect(() => {
+    if (mode === "existing" && subId) api.getItems(subId).then(setItems);
+    else setItems([]);
+  }, [mode, subId]);
+
+  async function reassign() {
+    if (!itemId) return;
+    await api.adminReassignOtherItem(row.report_id, itemId);
+    onDone();
+  }
+
+  async function approve() {
+    if (!subId || !name.trim()) return;
+    await api.adminApproveOtherItem(row.report_id, subId, name.trim());
+    onDone();
+  }
+
+  return (
+    <div className="row" style={{ alignItems: "flex-start", borderBottom: "1px solid var(--border)", paddingBottom: 10, marginBottom: 10 }}>
+      <div className="col">
+        <div><b>#{row.report_id}</b> ({row.type === "lost" ? "אבידה" : "מציאה"}) — "{row.other_item_text}"</div>
+        <div className="opts" style={{ marginTop: 6 }}>
+          <button type="button" className={"opt-btn" + (mode === "existing" ? " sel" : "")} onClick={() => setMode("existing")}>שינוי לפריט קיים</button>
+          <button type="button" className={"opt-btn" + (mode === "new" ? " sel" : "")} onClick={() => setMode("new")}>אישור כפריט חדש</button>
+        </div>
+
+        {mode === "existing" && (
+          <div className="row" style={{ marginTop: 8, alignItems: "flex-end" }}>
+            <div className="col">
+              <select value={mainId || ""} onChange={(e) => { setMainId(Number(e.target.value) || null); setSubId(null); setItemId(null); }}>
+                <option value="">— קטגוריה —</option>
+                {categories.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+              </select>
+            </div>
+            <div className="col">
+              <select value={subId || ""} onChange={(e) => { setSubId(Number(e.target.value) || null); setItemId(null); }} disabled={!mainId}>
+                <option value="">— תת-קטגוריה —</option>
+                {subs.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+              </select>
+            </div>
+            <div className="col">
+              <select value={itemId || ""} onChange={(e) => setItemId(Number(e.target.value) || null)} disabled={!subId}>
+                <option value="">— פריט —</option>
+                {items.map((it) => <option key={it.id} value={it.id}>{it.name}</option>)}
+              </select>
+            </div>
+            <div className="col" style={{ flex: "0 0 90px" }}>
+              <button className="btn btn-sm btn-pr" onClick={reassign} disabled={!itemId}>עדכן</button>
+            </div>
+          </div>
+        )}
+
+        {mode === "new" && (
+          <div className="row" style={{ marginTop: 8, alignItems: "flex-end" }}>
+            <div className="col">
+              <select value={mainId || ""} onChange={(e) => { setMainId(Number(e.target.value) || null); setSubId(null); }}>
+                <option value="">— קטגוריה —</option>
+                {categories.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+              </select>
+            </div>
+            <div className="col">
+              <select value={subId || ""} onChange={(e) => setSubId(Number(e.target.value) || null)} disabled={!mainId}>
+                <option value="">— תת-קטגוריה —</option>
+                {subs.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+              </select>
+            </div>
+            <div className="col">
+              <input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="שם הפריט..." />
+            </div>
+            <div className="col" style={{ flex: "0 0 110px" }}>
+              <button className="btn btn-sm btn-pr" onClick={approve} disabled={!subId || !name.trim()}>אשר והוסף</button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// Review queue for reports whose reporter picked "אחר" (couldn't find their item) and typed free
+// text describing it — mirrors OtherAnswersPanel but at the item level, not the attribute level.
+function OtherItemsPanel() {
+  const [rows, setRows] = useState([]);
+  const [categories, setCategories] = useState([]);
+
+  function load() { api.adminOtherItems().then(setRows); }
+  useEffect(() => {
+    load();
+    api.adminCategories().then(setCategories);
+  }, []);
+
+  return (
+    <div className="card" style={{ marginTop: 16 }}>
+      <div className="card-h">דיווחים עם פריט "אחר" הממתינים לסקירה</div>
+      <div className="card-b">
+        {!rows.length && <p className="muted">אין כרגע דיווחי "אחר" הממתינים לסקירה.</p>}
+        {rows.map((r) => (
+          <OtherItemRow key={r.report_id} row={r} categories={categories} onDone={load} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function CategoryEditor({ item, categories, onMoved }) {
   const [subId, setSubId] = useState(item.sub_id);
   const [newSubName, setNewSubName] = useState("");
@@ -260,6 +378,7 @@ export default function Admin() {
           )}
         </div>
       </div>
+      <OtherItemsPanel />
       <OtherAnswersPanel />
     </div>
   );
