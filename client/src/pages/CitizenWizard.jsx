@@ -159,6 +159,7 @@ function ItemPicker({ categories, searchLabel = "איזה פריט?", onSelect, 
   const [items, setItems] = useState([]);
   const [query, setQuery] = useState("");
   const [searchResults, setSearchResults] = useState([]);
+  const [searching, setSearching] = useState(false); // true while the debounce/fetch for the current query is still in flight
 
   const main = categories.find((m) => m.id === mainId);
   const subs = main?.subs || [];
@@ -179,14 +180,26 @@ function ItemPicker({ categories, searchLabel = "איזה פריט?", onSelect, 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [items]);
 
+  // "אין תוצאות" must only show once a search for the CURRENT query has actually come back empty —
+  // not while the debounce/fetch is still pending, and not with a stale result from a query that's
+  // since changed.
   useEffect(() => {
     const q = query.trim();
     if (mode !== "search" || !q) {
       setSearchResults([]);
+      setSearching(false);
       return;
     }
-    const t = setTimeout(() => { api.searchItems(q).then(setSearchResults); }, 300);
-    return () => clearTimeout(t);
+    let cancelled = false;
+    setSearching(true);
+    const t = setTimeout(() => {
+      api.searchItems(q).then((res) => {
+        if (cancelled) return;
+        setSearchResults(res);
+        setSearching(false);
+      });
+    }, 300);
+    return () => { cancelled = true; clearTimeout(t); };
   }, [query, mode]);
 
   function switchMode(next) {
@@ -196,6 +209,7 @@ function ItemPicker({ categories, searchLabel = "איזה פריט?", onSelect, 
     setSubId(null);
     setQuery("");
     setSearchResults([]);
+    setSearching(false);
     onSelect(null);
   }
 
@@ -255,7 +269,7 @@ function ItemPicker({ categories, searchLabel = "איזה פריט?", onSelect, 
               ))}
             </div>
           )}
-          {query.trim() && !searchResults.length && (
+          {query.trim() && !searching && !searchResults.length && (
             <p className="muted">
               אין תוצאות. <a href="#" onClick={(e) => { e.preventDefault(); switchMode("category"); }}>בחר/י לפי קטגוריה</a>
             </p>
