@@ -43,7 +43,7 @@ function OtherAnswersPanel() {
 // One report where the reporter couldn't find their item and typed free text instead
 // (items.is_other_placeholder). The admin either reassigns it to an existing item, or approves
 // it by creating a new item (in a category they pick) and reassigning the report to that.
-function OtherItemRow({ row, categories, onDone }) {
+function OtherItemRow({ row, categories, onDone, onCatalogChanged }) {
   const [mode, setMode] = useState(null); // null | "existing" | "new"
   const [mainId, setMainId] = useState(null);
   const [subId, setSubId] = useState(null);
@@ -69,6 +69,7 @@ function OtherItemRow({ row, categories, onDone }) {
     if (!subId || !name.trim()) return;
     await api.adminApproveOtherItem(row.report_id, subId, name.trim());
     onDone();
+    onCatalogChanged(); // a brand-new item was just created — refresh the items sidebar so it shows up
   }
 
   return (
@@ -135,7 +136,7 @@ function OtherItemRow({ row, categories, onDone }) {
 
 // Review queue for reports whose reporter picked "אחר" (couldn't find their item) and typed free
 // text describing it — mirrors OtherAnswersPanel but at the item level, not the attribute level.
-function OtherItemsPanel() {
+function OtherItemsPanel({ onCatalogChanged }) {
   const [rows, setRows] = useState([]);
   const [categories, setCategories] = useState([]);
 
@@ -151,7 +152,7 @@ function OtherItemsPanel() {
       <div className="card-b">
         {!rows.length && <p className="muted">אין כרגע דיווחי "אחר" הממתינים לסקירה.</p>}
         {rows.map((r) => (
-          <OtherItemRow key={r.report_id} row={r} categories={categories} onDone={load} />
+          <OtherItemRow key={r.report_id} row={r} categories={categories} onDone={load} onCatalogChanged={onCatalogChanged} />
         ))}
       </div>
     </div>
@@ -378,7 +379,7 @@ export default function Admin() {
           )}
         </div>
       </div>
-      <OtherItemsPanel />
+      <OtherItemsPanel onCatalogChanged={loadItems} />
       <OtherAnswersPanel />
     </div>
   );

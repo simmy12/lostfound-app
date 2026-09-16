@@ -537,8 +537,7 @@ export default function CitizenWizard() {
         ))}
       </div>
 
-      {step === 0 && (
-        <div className="card">
+      <div className="card" style={{ display: step === 0 ? undefined : "none" }}>
           <div className="card-b">
             <div className="type-card-row">
               <div className={"type-card" + (type === "lost" ? " act" : "")} onClick={() => setType("lost")}>
@@ -561,7 +560,7 @@ export default function CitizenWizard() {
             )}
 
             <div className="form-actions">
-              <button className="btn" disabled>→ חזרה</button>
+              <span />
               <button
                 className="btn btn-pr btn-lg"
                 disabled={!item || (itemMeta?.is_other_placeholder && !otherItemText.trim())}
@@ -571,11 +570,9 @@ export default function CitizenWizard() {
               </button>
             </div>
           </div>
-        </div>
-      )}
+      </div>
 
-      {step === 1 && (
-        <div className="card">
+      <div className="card" style={{ display: step === 1 ? undefined : "none" }}>
           <div className="card-h">פרטי הפריט</div>
           <div className="card-b">
             {itemAttrs.length === 0 && <p className="muted">לפריט זה אין שאלות נוספות.</p>}
@@ -637,11 +634,9 @@ export default function CitizenWizard() {
               <button className="btn btn-pr btn-lg" onClick={() => setStep(2)}>המשך ←</button>
             </div>
           </div>
-        </div>
-      )}
+      </div>
 
-      {step === 2 && (
-        <div className="card">
+      <div className="card" style={{ display: step === 2 ? undefined : "none" }}>
           <div className="card-h">מיקום ותאריך</div>
           <div className="card-b">
             {universalAttrs.map((attr, i) => (
@@ -655,11 +650,9 @@ export default function CitizenWizard() {
               <button className="btn btn-pr btn-lg" onClick={() => setStep(3)}>המשך ←</button>
             </div>
           </div>
-        </div>
-      )}
+      </div>
 
-      {step === 3 && (
-        <>
+      <div style={{ display: step === 3 ? undefined : "none" }}>
           <div className="card">
             <div className="card-h">סיכום הדיווח</div>
             <div className="card-b">
@@ -712,8 +705,7 @@ export default function CitizenWizard() {
             <button className="btn" onClick={() => setStep(2)}>→ חזרה</button>
             <button className="btn btn-pr btn-lg" onClick={submit}>✓ שלח דיווח</button>
           </div>
-        </>
-      )}
+      </div>
     </div>
   );
 }

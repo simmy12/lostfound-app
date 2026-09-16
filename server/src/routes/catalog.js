@@ -28,7 +28,7 @@ router.get("/categories", asyncHandler(async (req, res) => {
 router.get("/subs/:subId/items", asyncHandler(async (req, res) => {
   const subId = parseId(req, res, "subId");
   if (subId == null) return;
-  const r = await pool.query("SELECT id, name FROM items WHERE sub_id = $1 ORDER BY name", [subId]);
+  const r = await pool.query("SELECT id, name FROM items WHERE sub_id = $1 ORDER BY (name = 'אחר'), name", [subId]);
   res.json(r.rows);
 }));
 
@@ -41,7 +41,7 @@ router.get("/items/search", asyncHandler(async (req, res) => {
     `SELECT i.id, i.name, cs.name AS sub_name, cm.name AS main_name
      FROM items i JOIN categories_sub cs ON cs.id = i.sub_id JOIN categories_main cm ON cm.id = cs.main_id
      WHERE i.name ILIKE $1
-     ORDER BY i.name
+     ORDER BY (i.name = 'אחר'), i.name
      LIMIT 20`,
     [`%${q}%`]
   );

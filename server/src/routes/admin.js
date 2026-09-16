@@ -45,7 +45,7 @@ router.get("/admin/items", asyncHandler(async (req, res) => {
     `SELECT i.id, i.name, i.sub_id, i.can_be_contained, i.can_have_nearby, i.can_contain_items,
             cs.name AS sub_name, cm.id AS main_id, cm.name AS main_name
      FROM items i JOIN categories_sub cs ON cs.id = i.sub_id JOIN categories_main cm ON cm.id = cs.main_id
-     ORDER BY cm.name, cs.name, i.name`
+     ORDER BY (cm.name = 'אחר'), cm.name, (cs.name = 'אחר'), cs.name, (i.name = 'אחר'), i.name`
   );
   res.json(r.rows);
 }));
