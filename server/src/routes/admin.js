@@ -118,7 +118,17 @@ router.get("/admin/other-answers", asyncHandler(async (req, res) => {
      GROUP BY rav.attribute_id, a.name, a.scope, trim(rav.free_text)
      ORDER BY count DESC, attribute_name`
   );
-  res.json(r.rows);
+  const attrIds = [...new Set(r.rows.map((row) => row.attribute_id))];
+  const values = await pool.query(
+    `SELECT attribute_id, id, value FROM attribute_values WHERE attribute_id = ANY($1::int[]) ORDER BY display_order`,
+    [attrIds]
+  );
+  res.json(
+    r.rows.map((row) => ({
+      ...row,
+      values: values.rows.filter((v) => v.attribute_id === row.attribute_id).map((v) => ({ id: v.id, value: v.value })),
+    }))
+  );
 }));
 
 // promote a grouped "אחר" text to a real, selectable attribute value
@@ -164,6 +174,25 @@ router.post("/admin/other-answers/promote", asyncHandler(async (req, res) => {
   } finally {
     client.release();
   }
+}));
+
+// reject a grouped "אחר" text — instead of adding it as a new value, re-point every report that
+// used it to an existing, already-listed value for the same attribute
+router.post("/admin/other-answers/reassign", asyncHandler(async (req, res) => {
+  const { attribute_id, text, value_id } = req.body;
+  if (!attribute_id || !text || !value_id) {
+    return res.status(400).json({ error: "attribute_id, text and value_id are required" });
+  }
+  const owns = await pool.query(`SELECT 1 FROM attribute_values WHERE id = $1 AND attribute_id = $2`, [value_id, attribute_id]);
+  if (!owns.rows.length) return res.status(400).json({ error: "value_id does not belong to attribute_id" });
+
+  const upd = await pool.query(
+    `UPDATE report_attribute_values SET value_id = $1, free_text = NULL
+     WHERE attribute_id = $2 AND value_id IS NULL AND trim(free_text) = $3
+     RETURNING id`,
+    [value_id, attribute_id, text]
+  );
+  res.json({ updated: upd.rowCount });
 }));
 
 // ---- "אחר" item review: reports where the reporter couldn't find their item at all and typed

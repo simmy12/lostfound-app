@@ -4,6 +4,7 @@ import { api } from "../api";
 function OtherAnswersPanel() {
   const [rows, setRows] = useState([]);
   const [retroactive, setRetroactive] = useState({});
+  const [reassignValue, setReassignValue] = useState({});
 
   function load() { api.adminOtherAnswers().then(setRows); }
   useEffect(load, []);
@@ -13,26 +14,46 @@ function OtherAnswersPanel() {
     load();
   }
 
+  async function reassign(row) {
+    const valueId = reassignValue[row.sample_id];
+    if (!valueId) return;
+    await api.adminReassignOtherAnswer(row.attribute_id, row.text, valueId);
+    load();
+  }
+
   return (
-    <div className="card" style={{ marginTop: 16 }}>
-      <div className="card-h">תשובות "אחר" שנצברו</div>
+    <div className="card">
+      <div className="card-h">תשובות "אחר" שנצברו (שאלות על הפריט)</div>
       <div className="card-b">
         {!rows.length && <p className="muted">אין כרגע תשובות "אחר" הממתינות לסקירה.</p>}
         {rows.map((r) => (
-          <div key={r.attribute_id + "|" + r.text} className="row" style={{ alignItems: "center", borderBottom: "1px solid var(--border)", paddingBottom: 10, marginBottom: 10 }}>
-            <div className="col">
-              <div><b>{r.attribute_name}</b> — "{r.text}"</div>
-              <div className="muted" style={{ fontSize: 12 }}>הופיע {r.count} פעמים</div>
+          <div key={r.attribute_id + "|" + r.text} style={{ borderBottom: "1px solid var(--border)", paddingBottom: 10, marginBottom: 10 }}>
+            <div><b>{r.attribute_name}</b> — "{r.text}"</div>
+            <div className="muted" style={{ fontSize: 12, marginBottom: 6 }}>הופיע {r.count} פעמים</div>
+            <div className="row" style={{ alignItems: "center", flexWrap: "wrap", gap: 8 }}>
+              <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 13 }}>
+                <input
+                  type="checkbox"
+                  checked={!!retroactive[r.sample_id]}
+                  onChange={(e) => setRetroactive((p) => ({ ...p, [r.sample_id]: e.target.checked }))}
+                />
+                עדכן גם דיווחים קיימים
+              </label>
+              <button className="btn btn-sm btn-pr" onClick={() => promote(r)}>+ הוסף לרשימה</button>
+              {!!r.values?.length && (
+                <>
+                  <select
+                    style={{ width: "auto" }}
+                    value={reassignValue[r.sample_id] || ""}
+                    onChange={(e) => setReassignValue((p) => ({ ...p, [r.sample_id]: Number(e.target.value) || null }))}
+                  >
+                    <option value="">— שייך לערך קיים —</option>
+                    {r.values.map((v) => <option key={v.id} value={v.id}>{v.value}</option>)}
+                  </select>
+                  <button className="btn btn-sm" onClick={() => reassign(r)} disabled={!reassignValue[r.sample_id]}>שייך</button>
+                </>
+              )}
             </div>
-            <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 13 }}>
-              <input
-                type="checkbox"
-                checked={!!retroactive[r.sample_id]}
-                onChange={(e) => setRetroactive((p) => ({ ...p, [r.sample_id]: e.target.checked }))}
-              />
-              עדכן גם דיווחים קיימים
-            </label>
-            <button className="btn btn-sm btn-pr" onClick={() => promote(r)}>+ הוסף לרשימה</button>
           </div>
         ))}
       </div>
@@ -147,7 +168,7 @@ function OtherItemsPanel({ onCatalogChanged }) {
   }, []);
 
   return (
-    <div className="card" style={{ marginTop: 16 }}>
+    <div className="card">
       <div className="card-h">דיווחים עם פריט "אחר" הממתינים לסקירה</div>
       <div className="card-b">
         {!rows.length && <p className="muted">אין כרגע דיווחי "אחר" הממתינים לסקירה.</p>}
@@ -282,6 +303,10 @@ export default function Admin() {
 
   return (
     <div className="page page-wide">
+      <div style={{ display: "flex", flexDirection: "column", gap: 16, marginBottom: 16 }}>
+        <OtherItemsPanel onCatalogChanged={loadItems} />
+        <OtherAnswersPanel />
+      </div>
       <div style={{ display: "flex", gap: 16, alignItems: "flex-start" }}>
         <div style={{ width: 260, flexShrink: 0, background: "var(--white)", border: "1px solid var(--border)", borderRadius: "var(--rl)", overflow: "hidden", boxShadow: "var(--shadow)" }}>
           <div style={{ padding: "11px 14px", background: "#f8fafc", borderBottom: "1px solid var(--border)", fontSize: 13, fontWeight: 600 }}>
@@ -379,8 +404,6 @@ export default function Admin() {
           )}
         </div>
       </div>
-      <OtherItemsPanel onCatalogChanged={loadItems} />
-      <OtherAnswersPanel />
     </div>
   );
 }

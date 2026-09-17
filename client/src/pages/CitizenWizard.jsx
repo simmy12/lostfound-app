@@ -149,6 +149,12 @@ function flattenAnswers(answers) {
   return out;
 }
 
+// "אחר" is only a real answer once free text backs it up — used to gate the "המשך" buttons so a
+// half-picked "אחר" (chosen but not typed) can't silently vanish (flattenAnswers would just drop it).
+function isOtherIncomplete(v) {
+  return !!v?.isOther && !(v?.free_text || "").trim();
+}
+
 // Lets the reporter find an item either by browsing category -> sub-category -> item, or by
 // typing a free-text search across the whole catalog — one method at a time, toggled by a tab bar.
 // Reports the chosen item ({id, name}) up via onSelect; null when nothing is chosen (yet).
@@ -337,6 +343,7 @@ function SubReportPicker({ categories, label, onChange, onRemove, containerMode,
             item_id: item.id,
             item_answers: flattenAnswers(answers),
             contents: nestedContents.filter((c) => c.value).map((c) => c.value),
+            incomplete: Object.values(answers).some(isOtherIncomplete) || nestedContents.some((c) => c.value?.incomplete),
           }
         : null
     );
@@ -488,6 +495,14 @@ export default function CitizenWizard() {
   const setAnswer = (a) => setAnswers((prev) => ({ ...prev, [a.attribute_id]: a }));
   const itemName = item?.name || "הפריט";
 
+  // "אחר" picked but not typed in, anywhere on the current step — blocks "המשך" until filled in
+  const step1Incomplete =
+    itemAttrs.some((a) => isOtherIncomplete(answers[a.id])) ||
+    contents.some((c) => c.value?.incomplete) ||
+    containerItems.some((c) => c.value?.incomplete) ||
+    nearbyItems.some((n) => n.value?.incomplete);
+  const step2Incomplete = universalAttrs.some((a) => isOtherIncomplete(answers[a.id]));
+
   async function submit() {
     const itemAttrIds = new Set(itemAttrs.map((a) => a.id));
     const universalAttrIds = new Set(universalAttrs.map((a) => a.id));
@@ -629,9 +644,10 @@ export default function CitizenWizard() {
               <label>הערה</label>
               <textarea value={note} onChange={(e) => setNote(e.target.value)} placeholder="הערה נוספת..." />
             </div>
+            {step1Incomplete && <p className="muted" style={{ color: "#b91c1c" }}>יש להשלים טקסט עבור כל שדה שסומן "אחר".</p>}
             <div className="form-actions">
               <button className="btn" onClick={() => setStep(0)}>→ חזרה</button>
-              <button className="btn btn-pr btn-lg" onClick={() => setStep(2)}>המשך ←</button>
+              <button className="btn btn-pr btn-lg" disabled={step1Incomplete} onClick={() => setStep(2)}>המשך ←</button>
             </div>
           </div>
       </div>
@@ -645,9 +661,10 @@ export default function CitizenWizard() {
                 <AttributeField attr={attr} value={answers[attr.id]} onChange={setAnswer} />
               </div>
             ))}
+            {step2Incomplete && <p className="muted" style={{ color: "#b91c1c" }}>יש להשלים טקסט עבור כל שדה שסומן "אחר".</p>}
             <div className="form-actions">
               <button className="btn" onClick={() => setStep(1)}>→ חזרה</button>
-              <button className="btn btn-pr btn-lg" onClick={() => setStep(3)}>המשך ←</button>
+              <button className="btn btn-pr btn-lg" disabled={step2Incomplete} onClick={() => setStep(3)}>המשך ←</button>
             </div>
           </div>
       </div>
@@ -703,7 +720,13 @@ export default function CitizenWizard() {
 
           <div className="form-actions">
             <button className="btn" onClick={() => setStep(2)}>→ חזרה</button>
-            <button className="btn btn-pr btn-lg" onClick={submit}>✓ שלח דיווח</button>
+            <button
+              className="btn btn-pr btn-lg"
+              disabled={step1Incomplete || step2Incomplete || (itemMeta?.is_other_placeholder && !otherItemText.trim())}
+              onClick={submit}
+            >
+              ✓ שלח דיווח
+            </button>
           </div>
       </div>
     </div>

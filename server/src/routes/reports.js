@@ -140,7 +140,7 @@ router.get("/reports", asyncHandler(async (req, res) => {
   if (main_id) clauses.push(`cs.main_id = ${p(main_id)}`);
   if (date_from) clauses.push(`r.created_at >= ${p(date_from)}`);
   if (date_to) clauses.push(`r.created_at <= ${p(date_to)}`);
-  if (q) clauses.push(`(r.free_text ILIKE ${p("%" + q + "%")} OR i.name ILIKE ${p("%" + q + "%")})`);
+  if (q) clauses.push(`(r.free_text ILIKE ${p("%" + q + "%")} OR i.name ILIKE ${p("%" + q + "%")} OR r.other_item_text ILIKE ${p("%" + q + "%")})`);
   if (region) clauses.push(`EXISTS (SELECT 1 FROM report_attribute_values rav
      JOIN attributes a ON a.id = rav.attribute_id JOIN attribute_values av ON av.id = rav.value_id
      WHERE rav.report_id = r.id AND a.name = 'אזור ארץ' AND av.value = ${p(region)})`);
@@ -151,7 +151,7 @@ router.get("/reports", asyncHandler(async (req, res) => {
   const where = clauses.length ? "WHERE " + clauses.join(" AND ") : "";
   const sql = `
     SELECT r.id, r.type, r.status, r.free_text, r.created_at, r.item_id,
-           i.name AS item_name, cs.name AS sub_name, cm.name AS main_name
+           COALESCE(NULLIF(trim(r.other_item_text), ''), i.name) AS item_name, cs.name AS sub_name, cm.name AS main_name
     FROM reports r
     JOIN items i ON i.id = r.item_id
     JOIN categories_sub cs ON cs.id = i.sub_id
@@ -180,7 +180,8 @@ async function linksFor(reportIds) {
   if (!reportIds.length) return result;
 
   const contentsR = await pool.query(
-    `SELECT rcl.container_report_id, rcl.content_report_id, i.name AS item_name, r.type, r.status
+    `SELECT rcl.container_report_id, rcl.content_report_id,
+            COALESCE(NULLIF(trim(r.other_item_text), ''), i.name) AS item_name, r.type, r.status
      FROM report_container_links rcl
      JOIN reports r ON r.id = rcl.content_report_id
      JOIN items i ON i.id = r.item_id
@@ -193,7 +194,8 @@ async function linksFor(reportIds) {
   }
 
   const containerR = await pool.query(
-    `SELECT rcl.content_report_id, rcl.container_report_id, i.name AS item_name, r.type, r.status
+    `SELECT rcl.content_report_id, rcl.container_report_id,
+            COALESCE(NULLIF(trim(r.other_item_text), ''), i.name) AS item_name, r.type, r.status
      FROM report_container_links rcl
      JOIN reports r ON r.id = rcl.container_report_id
      JOIN items i ON i.id = r.item_id
@@ -216,7 +218,8 @@ async function linksFor(reportIds) {
   for (const row of pairsR.rows) { otherIds.add(row.report_id_a); otherIds.add(row.report_id_b); }
   if (otherIds.size) {
     const namesR = await pool.query(
-      `SELECT r.id, i.name AS item_name, r.type, r.status FROM reports r JOIN items i ON i.id = r.item_id
+      `SELECT r.id, COALESCE(NULLIF(trim(r.other_item_text), ''), i.name) AS item_name, r.type, r.status
+       FROM reports r JOIN items i ON i.id = r.item_id
        WHERE r.id = ANY($1::int[])`,
       [[...otherIds]]
     );
@@ -239,7 +242,8 @@ router.get("/reports/:id", asyncHandler(async (req, res) => {
   const id = parseId(req, res);
   if (id == null) return;
   const r = await pool.query(
-    `SELECT r.*, i.name AS item_name, cs.name AS sub_name, cm.name AS main_name
+    `SELECT r.*, COALESCE(NULLIF(trim(r.other_item_text), ''), i.name) AS item_name,
+            cs.name AS sub_name, cm.name AS main_name
      FROM reports r
      JOIN items i ON i.id = r.item_id
      JOIN categories_sub cs ON cs.id = i.sub_id
@@ -335,7 +339,8 @@ router.get("/reports/:id/matches", asyncHandler(async (req, res) => {
 
   const ids = results.map((r) => r.report_id);
   const detail = await pool.query(
-    `SELECT r.id, r.type, r.status, r.free_text, r.created_at, i.name AS item_name,
+    `SELECT r.id, r.type, r.status, r.free_text, r.created_at,
+            COALESCE(NULLIF(trim(r.other_item_text), ''), i.name) AS item_name,
             cs.name AS sub_name, cm.name AS main_name
      FROM reports r
      JOIN items i ON i.id = r.item_id
