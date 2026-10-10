@@ -71,7 +71,7 @@ router.get("/items/:itemId/attributes", asyncHandler(async (req, res) => {
   const itemId = parseId(req, res, "itemId");
   if (itemId == null) return;
   const r = await pool.query(
-    `SELECT a.id, a.name, a.input_type, ia.display_order, ia.weight
+    `SELECT a.id, a.name, a.input_type, ia.display_order, ia.weight, ia.required
      FROM item_attributes ia JOIN attributes a ON a.id = ia.attribute_id
      WHERE ia.item_id = $1 ORDER BY ia.display_order`,
     [itemId]
@@ -93,7 +93,7 @@ router.get("/items/:itemId/attributes", asyncHandler(async (req, res) => {
 // universal attributes shown on every report (location/date step)
 router.get("/universal-attributes", asyncHandler(async (req, res) => {
   const r = await pool.query(
-    `SELECT a.id, a.name, a.input_type, ua.display_order, ua.weight
+    `SELECT a.id, a.name, a.input_type, ua.display_order, ua.weight, ua.required
      FROM universal_attributes ua JOIN attributes a ON a.id = ua.attribute_id
      ORDER BY ua.display_order`
   );

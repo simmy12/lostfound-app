@@ -235,6 +235,53 @@ function CategoryEditor({ item, categories, onMoved }) {
   );
 }
 
+// values textarea: one value per line (or comma-separated), blanks dropped
+function parseValuesInput(text) {
+  return text.split(/[\n,]/).map((v) => v.trim()).filter(Boolean);
+}
+
+// Inline "+ add a new question" form, used both for a specific item and for universal questions.
+function NewAttributeForm({ onCreate }) {
+  const [name, setName] = useState("");
+  const [inputType, setInputType] = useState("single");
+  const [valuesText, setValuesText] = useState("");
+
+  async function create() {
+    if (!name.trim()) return;
+    const values = inputType === "single" || inputType === "multi" ? parseValuesInput(valuesText) : [];
+    await onCreate({ name: name.trim(), input_type: inputType, values });
+    setName("");
+    setValuesText("");
+  }
+
+  return (
+    <div style={{ marginTop: 10 }}>
+      <div className="row" style={{ alignItems: "flex-end" }}>
+        <div className="col">
+          <label>שם השאלה</label>
+          <input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="לדוגמה: חברה" />
+        </div>
+        <div className="col" style={{ flex: "0 0 140px" }}>
+          <label>סוג</label>
+          <select value={inputType} onChange={(e) => setInputType(e.target.value)}>
+            <option value="single">בחירה אחת</option>
+            <option value="multi">בחירה מרובה</option>
+            <option value="text">טקסט חופשי</option>
+            <option value="number">מספר</option>
+          </select>
+        </div>
+      </div>
+      {(inputType === "single" || inputType === "multi") && (
+        <div style={{ marginTop: 6 }}>
+          <label>רשימת ערכים (אחד בכל שורה)</label>
+          <textarea value={valuesText} onChange={(e) => setValuesText(e.target.value)} placeholder={"אדום\nכחול\nירוק"} />
+        </div>
+      )}
+      <button className="btn btn-sm btn-pr" style={{ marginTop: 6 }} onClick={create} disabled={!name.trim()}>+ הוסף שאלה</button>
+    </div>
+  );
+}
+
 export default function Admin() {
   const [items, setItems] = useState([]);
   const [universal, setUniversal] = useState([]);
@@ -242,6 +289,10 @@ export default function Admin() {
   const [selectedItem, setSelectedItem] = useState(null);
   const [attrs, setAttrs] = useState([]);
   const [newValue, setNewValue] = useState({});
+  const [showNewItemForm, setShowNewItemForm] = useState(false);
+  const [newItemMain, setNewItemMain] = useState(null);
+  const [newItemSub, setNewItemSub] = useState(null);
+  const [newItemName, setNewItemName] = useState("");
 
   function loadItems() { api.adminListItems().then(setItems); }
   useEffect(() => {
@@ -295,6 +346,52 @@ export default function Admin() {
     setAttrs((prev) => prev.map((a) => (a.id === attrId ? { ...a, values: a.values.filter((v) => v.id !== valueId) } : a)));
   }
 
+  async function setRequired(attrId, required) {
+    await api.adminSetItemAttrRequired(selectedItem.id, attrId, required);
+    setAttrs((prev) => prev.map((a) => (a.id === attrId ? { ...a, required } : a)));
+  }
+
+  async function setUniversalRequired(attrId, required) {
+    await api.adminSetUniversalRequired(attrId, required);
+    setUniversal((prev) => prev.map((a) => (a.id === attrId ? { ...a, required } : a)));
+  }
+
+  async function addItemAttribute(payload) {
+    await api.adminCreateAttribute({ ...payload, item_id: selectedItem.id });
+    const a = await api.adminGetItemAttributes(selectedItem.id);
+    setAttrs(a);
+  }
+
+  async function addUniversalAttribute(payload) {
+    await api.adminCreateAttribute({ ...payload, universal: true });
+    const u = await api.adminGetUniversalAttributes();
+    setUniversal(u);
+  }
+
+  async function removeItemAttribute(attrId) {
+    await api.adminRemoveItemAttribute(selectedItem.id, attrId);
+    setAttrs((prev) => prev.filter((a) => a.id !== attrId));
+  }
+
+  async function deleteAttributeEntirely(attrId, fromUniversal) {
+    if (!window.confirm("פעולה זו תמחק את השאלה הזו לצמיתות מכל המערכת, כולל מכל הדיווחים הקיימים שכוללים תשובה לשאלה הזו. להמשיך?")) return;
+    await api.adminDeleteAttribute(attrId);
+    if (fromUniversal) setUniversal((prev) => prev.filter((a) => a.id !== attrId));
+    else setAttrs((prev) => prev.filter((a) => a.id !== attrId));
+  }
+
+  async function createItem() {
+    if (!newItemSub || !newItemName.trim()) return;
+    await api.adminCreateItem({ sub_id: newItemSub, name: newItemName.trim() });
+    setNewItemName("");
+    setNewItemMain(null);
+    setNewItemSub(null);
+    setShowNewItemForm(false);
+    await loadItems();
+  }
+
+  const newItemSubs = categories.find((m) => m.id === newItemMain)?.subs || [];
+
   const grouped = {};
   for (const it of items) {
     const key = it.main_name + " / " + it.sub_name;
@@ -314,16 +411,29 @@ export default function Admin() {
           </div>
           <div style={{ padding: 8 }}>
             {universal.map((a) => (
-              <div className="tree-item" key={a.id}>
-                <span>{a.name}</span>
-                <input
-                  className="score-pill"
-                  type="number"
-                  value={a.weight}
-                  onChange={(e) => setUniversalWeight(a.id, Number(e.target.value))}
-                />
+              <div key={a.id} style={{ marginBottom: 6, paddingBottom: 6, borderBottom: "1px solid var(--border)" }}>
+                <div className="tree-item">
+                  <span>{a.name}</span>
+                  <input
+                    className="score-pill"
+                    type="number"
+                    value={a.weight}
+                    onChange={(e) => setUniversalWeight(a.id, Number(e.target.value))}
+                  />
+                </div>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: 12 }}>
+                  <label style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                    <input type="checkbox" checked={!!a.required} onChange={(e) => setUniversalRequired(a.id, e.target.checked)} />
+                    חובה
+                  </label>
+                  <button className="btn btn-sm" onClick={() => deleteAttributeEntirely(a.id, true)}>מחק</button>
+                </div>
               </div>
             ))}
+            <details>
+              <summary style={{ cursor: "pointer", fontSize: 13, color: "var(--pr)" }}>+ הוסף שאלה אוניברסלית</summary>
+              <NewAttributeForm onCreate={addUniversalAttribute} />
+            </details>
           </div>
           <div style={{ padding: "11px 14px", background: "#f8fafc", borderTop: "1px solid var(--border)", borderBottom: "1px solid var(--border)", fontSize: 13, fontWeight: 600 }}>
             פריטים
@@ -339,6 +449,28 @@ export default function Admin() {
                 ))}
               </div>
             ))}
+          </div>
+          <div style={{ padding: 8, borderTop: "1px solid var(--border)" }}>
+            {!showNewItemForm && (
+              <button className="btn btn-sm" style={{ width: "100%" }} onClick={() => setShowNewItemForm(true)}>+ הוסף פריט חדש</button>
+            )}
+            {showNewItemForm && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                <select value={newItemMain || ""} onChange={(e) => { setNewItemMain(Number(e.target.value) || null); setNewItemSub(null); }}>
+                  <option value="">— קטגוריה —</option>
+                  {categories.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+                </select>
+                <select value={newItemSub || ""} onChange={(e) => setNewItemSub(Number(e.target.value) || null)} disabled={!newItemMain}>
+                  <option value="">— תת-קטגוריה —</option>
+                  {newItemSubs.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                </select>
+                <input type="text" value={newItemName} onChange={(e) => setNewItemName(e.target.value)} placeholder="שם הפריט..." />
+                <div style={{ display: "flex", gap: 6 }}>
+                  <button className="btn btn-sm btn-pr" style={{ flex: 1 }} onClick={createItem} disabled={!newItemSub || !newItemName.trim()}>+ הוסף</button>
+                  <button className="btn btn-sm" onClick={() => setShowNewItemForm(false)}>ביטול</button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
@@ -382,6 +514,16 @@ export default function Admin() {
                         <label>משקל בניקוד התאמה</label>
                         <input type="number" value={a.weight} onChange={(e) => setWeight(a.id, Number(e.target.value))} />
                       </div>
+                      <div className="col" style={{ flex: "0 0 80px" }}>
+                        <label style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                          <input type="checkbox" checked={!!a.required} onChange={(e) => setRequired(a.id, e.target.checked)} />
+                          חובה
+                        </label>
+                      </div>
+                      <div className="col" style={{ flex: "0 0 auto", display: "flex", gap: 6 }}>
+                        <button className="btn btn-sm" onClick={() => removeItemAttribute(a.id)}>✕ הסר מפריט זה</button>
+                        <button className="btn btn-sm" onClick={() => deleteAttributeEntirely(a.id, false)}>מחק לצמיתות</button>
+                      </div>
                     </div>
                     {(a.input_type === "single" || a.input_type === "multi") && (
                       <div style={{ marginTop: 8 }}>
@@ -399,6 +541,11 @@ export default function Admin() {
                     )}
                   </div>
                 ))}
+
+                <details>
+                  <summary style={{ cursor: "pointer", fontSize: 13, color: "var(--pr)" }}>+ הוסף שאלה לפריט זה</summary>
+                  <NewAttributeForm onCreate={addItemAttribute} />
+                </details>
               </div>
             </div>
           )}

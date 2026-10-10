@@ -58,6 +58,7 @@ CREATE TABLE item_attributes (
   attribute_id  INTEGER NOT NULL REFERENCES attributes(id) ON DELETE CASCADE,
   display_order INTEGER NOT NULL DEFAULT 0,
   weight        INTEGER NOT NULL DEFAULT 10,
+  required      BOOLEAN NOT NULL DEFAULT false, -- admin-togglable; nothing is required by default
   PRIMARY KEY (item_id, attribute_id)
 );
 
@@ -65,7 +66,8 @@ CREATE TABLE item_attributes (
 CREATE TABLE universal_attributes (
   attribute_id  INTEGER PRIMARY KEY REFERENCES attributes(id) ON DELETE CASCADE,
   display_order INTEGER NOT NULL DEFAULT 0,
-  weight        INTEGER NOT NULL DEFAULT 10
+  weight        INTEGER NOT NULL DEFAULT 10,
+  required      BOOLEAN NOT NULL DEFAULT false
 );
 
 -- ===== Reports =====

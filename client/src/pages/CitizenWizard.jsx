@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
 import { formatAnswerValue } from "../format";
+import { ISRAELI_CITIES } from "../cities";
 
 const STEPS = ["פריט", "פרטים", "מיקום ותאריך", "סיכום"];
 const MAX_LINKED = 4;
@@ -120,6 +121,17 @@ function AttributeField({ attr, value, onChange }) {
       />
     );
   }
+  if (attr.name === "עיר") {
+    return (
+      <input
+        type="text"
+        list="cities-datalist"
+        value={value?.free_text || ""}
+        onChange={(e) => onChange({ attribute_id: attr.id, free_text: e.target.value })}
+        placeholder="התחל/י להקליד שם עיר/יישוב..."
+      />
+    );
+  }
   return (
     <input
       type="text"
@@ -153,6 +165,17 @@ function flattenAnswers(answers) {
 // half-picked "אחר" (chosen but not typed) can't silently vanish (flattenAnswers would just drop it).
 function isOtherIncomplete(v) {
   return !!v?.isOther && !(v?.free_text || "").trim();
+}
+
+// whether `value` counts as a real answer to `attr` — used to enforce admin-marked required questions
+function isAnswered(attr, value) {
+  if (!value) return false;
+  if (attr.values?.length) {
+    if (value.value_id != null) return true; // strict yes/no gate
+    if (value.value_ids?.length) return true; // choice, up to 2
+    return !!value.isOther && !!(value.free_text || "").trim();
+  }
+  return !!(value.free_text || "").trim();
 }
 
 // Lets the reporter find an item either by browsing category -> sub-category -> item, or by
@@ -341,6 +364,7 @@ function SubReportPicker({ categories, label, onChange, onRemove, containerMode,
       item
         ? {
             item_id: item.id,
+            item_name: item.name,
             item_answers: flattenAnswers(answers),
             contents: nestedContents.filter((c) => c.value).map((c) => c.value),
             incomplete: Object.values(answers).some(isOtherIncomplete) || nestedContents.some((c) => c.value?.incomplete),
@@ -383,7 +407,7 @@ function SubReportPicker({ categories, label, onChange, onRemove, containerMode,
             </div>
             <LinkedItemsList
               title="פריט"
-              prompt={`האם היו עוד דברים באותו ${itemMeta.name || "פריט"}?`}
+              prompt={`האם היו עוד דברים בתוך ה${itemMeta.name || "פריט"}?`}
               hint="ניתן להוסיף עד 3 פריטים נוספים שהיו יחד עם הפריט המקורי."
               items={nestedContents}
               setItems={setNestedContents}
@@ -495,13 +519,13 @@ export default function CitizenWizard() {
   const setAnswer = (a) => setAnswers((prev) => ({ ...prev, [a.attribute_id]: a }));
   const itemName = item?.name || "הפריט";
 
-  // "אחר" picked but not typed in, anywhere on the current step — blocks "המשך" until filled in
+  // blocks "המשך": an "אחר" picked but not typed in, or an admin-marked-required question left unanswered
   const step1Incomplete =
-    itemAttrs.some((a) => isOtherIncomplete(answers[a.id])) ||
+    itemAttrs.some((a) => isOtherIncomplete(answers[a.id]) || (a.required && !isAnswered(a, answers[a.id]))) ||
     contents.some((c) => c.value?.incomplete) ||
     containerItems.some((c) => c.value?.incomplete) ||
     nearbyItems.some((n) => n.value?.incomplete);
-  const step2Incomplete = universalAttrs.some((a) => isOtherIncomplete(answers[a.id]));
+  const step2Incomplete = universalAttrs.some((a) => isOtherIncomplete(answers[a.id]) || (a.required && !isAnswered(a, answers[a.id])));
 
   async function submit() {
     const itemAttrIds = new Set(itemAttrs.map((a) => a.id));
@@ -541,6 +565,9 @@ export default function CitizenWizard() {
 
   return (
     <div className="page page-center">
+      <datalist id="cities-datalist">
+        {ISRAELI_CITIES.map((c) => <option key={c} value={c} />)}
+      </datalist>
       <div className="progress-wrap">
         {STEPS.map((s, i) => (
           <div className="step-label" key={s}>
@@ -593,7 +620,7 @@ export default function CitizenWizard() {
             {itemAttrs.length === 0 && <p className="muted">לפריט זה אין שאלות נוספות.</p>}
             {itemAttrs.map((attr, i) => (
               <div className="q-block" key={attr.id}>
-                <div className="q-label"><span className="q-num">{i + 1}</span>{attrLabel(attr)}</div>
+                <div className="q-label"><span className="q-num">{i + 1}</span>{attrLabel(attr)}{attr.required && <span style={{ color: "#b91c1c" }}> *</span>}</div>
                 <AttributeField attr={attr} value={answers[attr.id]} onChange={setAnswer} />
               </div>
             ))}
@@ -612,7 +639,7 @@ export default function CitizenWizard() {
             {itemMeta?.can_be_contained && (
               <LinkedItemsList
                 title="בתוך מה היה?"
-                prompt="האם הפריט היה בתוך משהו (תיק, מזוודה וכד')?"
+                prompt={`האם ה${itemName} היה בתוך משהו (תיק, מזוודה וכד')?`}
                 containerMode
                 allowNestedContents
                 originalItemName={itemName}
@@ -629,7 +656,7 @@ export default function CitizenWizard() {
             {itemMeta?.can_have_nearby && (
               <LinkedItemsList
                 title="פריט סמוך"
-                prompt={`האם היו פריטים נוספים ליד ה${itemName} שנראים ששייכים לאותו אדם?`}
+                prompt={`האם היו פריטים נוספים ליד ה${containerItems[0]?.value?.item_name || itemName} שנראים ששייכים לאותו אדם?`}
                 items={nearbyItems}
                 setItems={setNearbyItems}
                 categories={categories}
@@ -644,7 +671,7 @@ export default function CitizenWizard() {
               <label>הערה</label>
               <textarea value={note} onChange={(e) => setNote(e.target.value)} placeholder="הערה נוספת..." />
             </div>
-            {step1Incomplete && <p className="muted" style={{ color: "#b91c1c" }}>יש להשלים טקסט עבור כל שדה שסומן "אחר".</p>}
+            {step1Incomplete && <p className="muted" style={{ color: "#b91c1c" }}>יש להשלים טקסט עבור כל שדה שסומן "אחר", ולענות על כל שדה המסומן בכוכבית (*).</p>}
             <div className="form-actions">
               <button className="btn" onClick={() => setStep(0)}>→ חזרה</button>
               <button className="btn btn-pr btn-lg" disabled={step1Incomplete} onClick={() => setStep(2)}>המשך ←</button>
@@ -657,11 +684,11 @@ export default function CitizenWizard() {
           <div className="card-b">
             {universalAttrs.map((attr, i) => (
               <div className="q-block" key={attr.id}>
-                <div className="q-label"><span className="q-num">{i + 1}</span>{attr.name}</div>
+                <div className="q-label"><span className="q-num">{i + 1}</span>{attr.name}{attr.required && <span style={{ color: "#b91c1c" }}> *</span>}</div>
                 <AttributeField attr={attr} value={answers[attr.id]} onChange={setAnswer} />
               </div>
             ))}
-            {step2Incomplete && <p className="muted" style={{ color: "#b91c1c" }}>יש להשלים טקסט עבור כל שדה שסומן "אחר".</p>}
+            {step2Incomplete && <p className="muted" style={{ color: "#b91c1c" }}>יש להשלים טקסט עבור כל שדה שסומן "אחר", ולענות על כל שדה המסומן בכוכבית (*).</p>}
             <div className="form-actions">
               <button className="btn" onClick={() => setStep(1)}>→ חזרה</button>
               <button className="btn btn-pr btn-lg" disabled={step2Incomplete} onClick={() => setStep(3)}>המשך ←</button>

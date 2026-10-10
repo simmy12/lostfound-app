@@ -34,9 +34,16 @@ export const api = {
     req(`/admin/item-attributes/${itemId}/${attrId}`, { method: "PUT", body: JSON.stringify({ weight }) }),
   adminSetUniversalWeight: (attrId, weight) =>
     req(`/admin/universal-attributes/${attrId}`, { method: "PUT", body: JSON.stringify({ weight }) }),
+  adminSetItemAttrRequired: (itemId, attrId, required) =>
+    req(`/admin/item-attributes/${itemId}/${attrId}`, { method: "PUT", body: JSON.stringify({ required }) }),
+  adminSetUniversalRequired: (attrId, required) =>
+    req(`/admin/universal-attributes/${attrId}`, { method: "PUT", body: JSON.stringify({ required }) }),
   adminAddValue: (attrId, value) =>
     req(`/admin/attributes/${attrId}/values`, { method: "POST", body: JSON.stringify({ value }) }),
   adminDeleteValue: (valueId) => req(`/admin/attribute-values/${valueId}`, { method: "DELETE" }),
+  adminCreateAttribute: (payload) => req("/admin/attributes", { method: "POST", body: JSON.stringify(payload) }),
+  adminRemoveItemAttribute: (itemId, attrId) => req(`/admin/items/${itemId}/attributes/${attrId}`, { method: "DELETE" }),
+  adminDeleteAttribute: (attrId) => req(`/admin/attributes/${attrId}`, { method: "DELETE" }),
 
   adminCategories: () => req("/admin/categories"),
   adminMoveItemCategory: (itemId, subId) =>
@@ -45,6 +52,7 @@ export const api = {
     req(`/admin/categories/${mainId}/subs`, { method: "POST", body: JSON.stringify({ name }) }),
   adminSetItemFlags: (itemId, flags) =>
     req(`/admin/items/${itemId}/flags`, { method: "PUT", body: JSON.stringify(flags) }),
+  adminCreateItem: (payload) => req("/admin/items", { method: "POST", body: JSON.stringify(payload) }),
 
   adminOtherAnswers: () => req("/admin/other-answers"),
   adminPromoteOther: (attributeId, text, retroactive) =>

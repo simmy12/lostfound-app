@@ -4,20 +4,90 @@ const asyncHandler = require("../lib/asyncHandler");
 
 const router = express.Router();
 
-// update weight of an item-specific attribute
+// update weight and/or required flag of an item-specific attribute
 router.put("/admin/item-attributes/:itemId/:attributeId", asyncHandler(async (req, res) => {
-  const { weight } = req.body;
+  const { weight, required } = req.body;
   await pool.query(
-    `UPDATE item_attributes SET weight = $1 WHERE item_id = $2 AND attribute_id = $3`,
-    [weight, req.params.itemId, req.params.attributeId]
+    `UPDATE item_attributes SET
+       weight   = COALESCE($1, weight),
+       required = COALESCE($2, required)
+     WHERE item_id = $3 AND attribute_id = $4`,
+    [weight, required, req.params.itemId, req.params.attributeId]
   );
   res.json({ ok: true });
 }));
 
-// update weight of a universal attribute
+// update weight and/or required flag of a universal attribute
 router.put("/admin/universal-attributes/:attributeId", asyncHandler(async (req, res) => {
-  const { weight } = req.body;
-  await pool.query(`UPDATE universal_attributes SET weight = $1 WHERE attribute_id = $2`, [weight, req.params.attributeId]);
+  const { weight, required } = req.body;
+  await pool.query(
+    `UPDATE universal_attributes SET
+       weight   = COALESCE($1, weight),
+       required = COALESCE($2, required)
+     WHERE attribute_id = $3`,
+    [weight, required, req.params.attributeId]
+  );
+  res.json({ ok: true });
+}));
+
+// create a brand-new question (attribute), optionally with its value list, attached either to a
+// specific item or as a universal question asked on every report
+router.post("/admin/attributes", asyncHandler(async (req, res) => {
+  const { name, input_type = "single", values = [], item_id, universal } = req.body;
+  if (!name) return res.status(400).json({ error: "name is required" });
+  if (!item_id && !universal) return res.status(400).json({ error: "item_id or universal is required" });
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const attrR = await client.query(
+      `INSERT INTO attributes (name, input_type, scope) VALUES ($1, $2, $3) RETURNING id`,
+      [name, input_type, universal ? "universal" : "item"]
+    );
+    const attributeId = attrR.rows[0].id;
+    for (let i = 0; i < values.length; i++) {
+      await client.query(
+        `INSERT INTO attribute_values (attribute_id, value, display_order) VALUES ($1,$2,$3)`,
+        [attributeId, values[i], i]
+      );
+    }
+    if (universal) {
+      await client.query(
+        `INSERT INTO universal_attributes (attribute_id, display_order)
+         VALUES ($1, (SELECT COALESCE(MAX(display_order)+1,0) FROM universal_attributes))`,
+        [attributeId]
+      );
+    } else {
+      await client.query(
+        `INSERT INTO item_attributes (item_id, attribute_id, display_order)
+         VALUES ($1, $2, (SELECT COALESCE(MAX(display_order)+1,0) FROM item_attributes WHERE item_id = $1))`,
+        [item_id, attributeId]
+      );
+    }
+    await client.query("COMMIT");
+    res.status(201).json({ id: attributeId });
+  } catch (e) {
+    await client.query("ROLLBACK");
+    console.error(e);
+    res.status(500).json({ error: "failed to create attribute" });
+  } finally {
+    client.release();
+  }
+}));
+
+// remove a question from one item only (the question and its other item-links are untouched)
+router.delete("/admin/items/:itemId/attributes/:attributeId", asyncHandler(async (req, res) => {
+  await pool.query(
+    `DELETE FROM item_attributes WHERE item_id = $1 AND attribute_id = $2`,
+    [req.params.itemId, req.params.attributeId]
+  );
+  res.json({ ok: true });
+}));
+
+// delete a question entirely — cascades to every item/universal link, its values, and every past
+// answer recorded for it. Destructive; the client confirms with the admin before calling this.
+router.delete("/admin/attributes/:id", asyncHandler(async (req, res) => {
+  await pool.query(`DELETE FROM attributes WHERE id = $1`, [req.params.id]);
   res.json({ ok: true });
 }));
 
@@ -52,7 +122,7 @@ router.get("/admin/items", asyncHandler(async (req, res) => {
 
 router.get("/admin/universal-attributes", asyncHandler(async (req, res) => {
   const r = await pool.query(
-    `SELECT a.id, a.name, a.input_type, ua.weight, ua.display_order
+    `SELECT a.id, a.name, a.input_type, ua.weight, ua.display_order, ua.required
      FROM universal_attributes ua JOIN attributes a ON a.id = ua.attribute_id
      ORDER BY ua.display_order`
   );
@@ -86,6 +156,20 @@ router.post("/admin/categories/:mainId/subs", asyncHandler(async (req, res) => {
     [req.params.mainId, name]
   );
   res.status(201).json(r.rows[0] || {});
+}));
+
+// add a brand-new item directly to the catalog, without waiting for a citizen's "אחר" report
+router.post("/admin/items", asyncHandler(async (req, res) => {
+  const { sub_id, name, can_be_contained = true, can_have_nearby = true, can_contain_items = false } = req.body;
+  if (!sub_id || !name) return res.status(400).json({ error: "sub_id and name are required" });
+  const idR = await pool.query(`SELECT COALESCE(MAX(id), 0) + 1 AS id FROM items`);
+  const newItemId = idR.rows[0].id;
+  await pool.query(
+    `INSERT INTO items (id, sub_id, name, can_be_contained, can_have_nearby, can_contain_items)
+     VALUES ($1,$2,$3,$4,$5,$6)`,
+    [newItemId, sub_id, name, can_be_contained, can_have_nearby, can_contain_items]
+  );
+  res.status(201).json({ id: newItemId });
 }));
 
 // per-item flags: whether to ask "was this inside something?" / "anything found nearby?"
