@@ -30,6 +30,20 @@ router.put("/admin/universal-attributes/:attributeId", asyncHandler(async (req, 
   res.json({ ok: true });
 }));
 
+// rename a question's wording — shared by every item/universal report that asks it
+router.put("/admin/attributes/:id/name", asyncHandler(async (req, res) => {
+  const { name } = req.body;
+  if (!name || !name.trim()) return res.status(400).json({ error: "name is required" });
+  try {
+    const r = await pool.query(`UPDATE attributes SET name = $1 WHERE id = $2 RETURNING id`, [name.trim(), req.params.id]);
+    if (!r.rows.length) return res.status(404).json({ error: "not found" });
+    res.json({ ok: true });
+  } catch (e) {
+    if (e.code === "23505") return res.status(400).json({ error: "שאלה בשם הזה כבר קיימת" });
+    throw e;
+  }
+}));
+
 // create a brand-new question (attribute), optionally with its value list, attached either to a
 // specific item or as a universal question asked on every report
 router.post("/admin/attributes", asyncHandler(async (req, res) => {
@@ -126,7 +140,18 @@ router.get("/admin/universal-attributes", asyncHandler(async (req, res) => {
      FROM universal_attributes ua JOIN attributes a ON a.id = ua.attribute_id
      ORDER BY ua.display_order`
   );
-  res.json(r.rows);
+  const attrs = r.rows;
+  const values = await pool.query(
+    `SELECT attribute_id, id, value FROM attribute_values
+     WHERE attribute_id = ANY($1::int[]) ORDER BY display_order`,
+    [attrs.map((a) => a.id)]
+  );
+  res.json(
+    attrs.map((a) => ({
+      ...a,
+      values: values.rows.filter((v) => v.attribute_id === a.id).map((v) => ({ id: v.id, value: v.value })),
+    }))
+  );
 }));
 
 // ---- category management ----

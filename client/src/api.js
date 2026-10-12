@@ -42,6 +42,8 @@ export const api = {
     req(`/admin/attributes/${attrId}/values`, { method: "POST", body: JSON.stringify({ value }) }),
   adminDeleteValue: (valueId) => req(`/admin/attribute-values/${valueId}`, { method: "DELETE" }),
   adminCreateAttribute: (payload) => req("/admin/attributes", { method: "POST", body: JSON.stringify(payload) }),
+  adminRenameAttribute: (attrId, name) =>
+    req(`/admin/attributes/${attrId}/name`, { method: "PUT", body: JSON.stringify({ name }) }),
   adminRemoveItemAttribute: (itemId, attrId) => req(`/admin/items/${itemId}/attributes/${attrId}`, { method: "DELETE" }),
   adminDeleteAttribute: (attrId) => req(`/admin/attributes/${attrId}`, { method: "DELETE" }),
 

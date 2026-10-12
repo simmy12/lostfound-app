@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
 
+const INPUT_TYPE_LABEL = { single: "בחירה אחת", multi: "בחירה מרובה", text: "טקסט חופשי", number: "מספר" };
+
 function OtherAnswersPanel() {
   const [rows, setRows] = useState([]);
   const [retroactive, setRetroactive] = useState({});
@@ -21,16 +23,17 @@ function OtherAnswersPanel() {
     load();
   }
 
+  if (!rows.length) return null;
+
   return (
-    <div className="card">
-      <div className="card-h">תשובות "אחר" שנצברו (שאלות על הפריט)</div>
-      <div className="card-b">
-        {!rows.length && <p className="muted">אין כרגע תשובות "אחר" הממתינות לסקירה.</p>}
+    <div className="admin-panel">
+      <div className="admin-panel-h">💬 תשובות "אחר" שנצברו בשאלות על הפריט ({rows.length})</div>
+      <div className="admin-section">
         {rows.map((r) => (
           <div key={r.attribute_id + "|" + r.text} style={{ borderBottom: "1px solid var(--border)", paddingBottom: 10, marginBottom: 10 }}>
             <div><b>{r.attribute_name}</b> — "{r.text}"</div>
             <div className="muted" style={{ fontSize: 12, marginBottom: 6 }}>הופיע {r.count} פעמים</div>
-            <div className="row" style={{ alignItems: "center", flexWrap: "wrap", gap: 8 }}>
+            <div className="row" style={{ alignItems: "center", flexWrap: "wrap", gap: 8, marginBottom: 0 }}>
               <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 13 }}>
                 <input
                   type="checkbox"
@@ -167,11 +170,12 @@ function OtherItemsPanel({ onCatalogChanged }) {
     api.adminCategories().then(setCategories);
   }, []);
 
+  if (!rows.length) return null;
+
   return (
-    <div className="card">
-      <div className="card-h">דיווחים עם פריט "אחר" הממתינים לסקירה</div>
-      <div className="card-b">
-        {!rows.length && <p className="muted">אין כרגע דיווחי "אחר" הממתינים לסקירה.</p>}
+    <div className="admin-panel">
+      <div className="admin-panel-h">📥 דיווחים עם פריט "אחר" הממתינים לסקירה ({rows.length})</div>
+      <div className="admin-section">
         {rows.map((r) => (
           <OtherItemRow key={r.report_id} row={r} categories={categories} onDone={load} onCatalogChanged={onCatalogChanged} />
         ))}
@@ -201,7 +205,7 @@ function CategoryEditor({ item, categories, onMoved }) {
   }
 
   return (
-    <div style={{ marginBottom: 18, paddingBottom: 14, borderBottom: "1px solid var(--border)" }}>
+    <div style={{ marginBottom: 18, paddingBottom: 16, borderBottom: "1px solid var(--border)" }}>
       <label>שיוך קטגוריה</label>
       <div className="row" style={{ alignItems: "flex-end" }}>
         <div className="col">
@@ -218,7 +222,7 @@ function CategoryEditor({ item, categories, onMoved }) {
         </div>
       </div>
       <label style={{ marginTop: 8 }}>הוספת תת-קטגוריה חדשה</label>
-      <div className="row" style={{ alignItems: "flex-end" }}>
+      <div className="row" style={{ alignItems: "flex-end", marginBottom: 0 }}>
         <div className="col" style={{ flex: "0 0 160px" }}>
           <select value={newSubMain} onChange={(e) => setNewSubMain(Number(e.target.value))}>
             {categories.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
@@ -242,6 +246,7 @@ function parseValuesInput(text) {
 
 // Inline "+ add a new question" form, used both for a specific item and for universal questions.
 function NewAttributeForm({ onCreate }) {
+  const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
   const [inputType, setInputType] = useState("single");
   const [valuesText, setValuesText] = useState("");
@@ -252,32 +257,120 @@ function NewAttributeForm({ onCreate }) {
     await onCreate({ name: name.trim(), input_type: inputType, values });
     setName("");
     setValuesText("");
+    setOpen(false);
+  }
+
+  if (!open) {
+    return <button className="admin-add-btn" onClick={() => setOpen(true)}>+ הוסף שאלה</button>;
   }
 
   return (
-    <div style={{ marginTop: 10 }}>
-      <div className="row" style={{ alignItems: "flex-end" }}>
-        <div className="col">
-          <label>שם השאלה</label>
-          <input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="לדוגמה: חברה" />
+    <div className="q-card">
+      <div className="q-card-body">
+        <div className="row" style={{ alignItems: "flex-end" }}>
+          <div className="col">
+            <label>שם השאלה</label>
+            <input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="לדוגמה: חברה" autoFocus />
+          </div>
+          <div className="col" style={{ flex: "0 0 150px" }}>
+            <label>סוג</label>
+            <select value={inputType} onChange={(e) => setInputType(e.target.value)}>
+              <option value="single">בחירה אחת</option>
+              <option value="multi">בחירה מרובה</option>
+              <option value="text">טקסט חופשי</option>
+              <option value="number">מספר</option>
+            </select>
+          </div>
         </div>
-        <div className="col" style={{ flex: "0 0 140px" }}>
-          <label>סוג</label>
-          <select value={inputType} onChange={(e) => setInputType(e.target.value)}>
-            <option value="single">בחירה אחת</option>
-            <option value="multi">בחירה מרובה</option>
-            <option value="text">טקסט חופשי</option>
-            <option value="number">מספר</option>
-          </select>
+        {(inputType === "single" || inputType === "multi") && (
+          <div style={{ marginBottom: 10 }}>
+            <label>רשימת ערכים (אחד בכל שורה)</label>
+            <textarea value={valuesText} onChange={(e) => setValuesText(e.target.value)} placeholder={"אדום\nכחול\nירוק"} />
+          </div>
+        )}
+        <div style={{ display: "flex", gap: 8 }}>
+          <button className="btn btn-sm btn-pr" onClick={create} disabled={!name.trim()}>+ הוסף שאלה</button>
+          <button className="btn btn-sm" onClick={() => setOpen(false)}>ביטול</button>
         </div>
       </div>
-      {(inputType === "single" || inputType === "multi") && (
-        <div style={{ marginTop: 6 }}>
-          <label>רשימת ערכים (אחד בכל שורה)</label>
-          <textarea value={valuesText} onChange={(e) => setValuesText(e.target.value)} placeholder={"אדום\nכחול\nירוק"} />
+    </div>
+  );
+}
+
+// One question's full editor card: rename, required toggle, weight, and — for choice-type
+// questions — its answer options. Shared by item-specific and universal (base) questions, so
+// both get exactly the same editing power.
+function QuestionCard({ attr, onRename, onSetWeight, onSetRequired, onAddValue, onDeleteValue, onRemoveFromItem, onDeleteEntirely }) {
+  const [name, setName] = useState(attr.name);
+  const [newValue, setNewValue] = useState("");
+
+  useEffect(() => setName(attr.name), [attr.name]);
+
+  function commitName() {
+    const trimmed = name.trim();
+    if (trimmed && trimmed !== attr.name) onRename(trimmed);
+    else setName(attr.name);
+  }
+
+  async function addValue() {
+    if (!newValue.trim()) return;
+    await onAddValue(newValue.trim());
+    setNewValue("");
+  }
+
+  const isChoice = attr.input_type === "single" || attr.input_type === "multi";
+
+  return (
+    <div className="q-card">
+      <div className="q-card-top">
+        <div className="q-card-name-wrap">
+          <input
+            className="q-card-name"
+            type="text"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            onBlur={commitName}
+            onKeyDown={(e) => { if (e.key === "Enter") e.target.blur(); }}
+            title="לחיצה לעריכת שם השאלה"
+          />
+          <span className="badge badge-gray">{INPUT_TYPE_LABEL[attr.input_type] || attr.input_type}</span>
+        </div>
+        <div className="q-card-actions">
+          <label className={"req-toggle" + (attr.required ? " on" : "")}>
+            <input type="checkbox" checked={!!attr.required} onChange={(e) => onSetRequired(e.target.checked)} />
+            חובה
+          </label>
+          <input
+            className="score-pill"
+            type="number"
+            title="משקל בניקוד התאמה"
+            value={attr.weight}
+            onChange={(e) => onSetWeight(Number(e.target.value))}
+          />
+          {onRemoveFromItem && <button className="btn btn-sm" onClick={onRemoveFromItem}>הסר מפריט זה</button>}
+          <button className="btn btn-sm btn-da" onClick={onDeleteEntirely}>מחק לצמיתות</button>
+        </div>
+      </div>
+      {isChoice && (
+        <div className="q-card-body">
+          <div className="chip-row">
+            {attr.values.map((v) => (
+              <span className="tag" key={v.id}>{v.value} <x onClick={() => onDeleteValue(v.id)}>✕</x></span>
+            ))}
+            {!attr.values.length && <span className="muted">אין ערכים מוגדרים עדיין</span>}
+          </div>
+          <div className="chip-add-row">
+            <input
+              type="text"
+              placeholder="ערך חדש..."
+              value={newValue}
+              onChange={(e) => setNewValue(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") addValue(); }}
+            />
+            <button className="btn btn-sm btn-pr" onClick={addValue}>+ הוסף ערך</button>
+          </div>
         </div>
       )}
-      <button className="btn btn-sm btn-pr" style={{ marginTop: 6 }} onClick={create} disabled={!name.trim()}>+ הוסף שאלה</button>
     </div>
   );
 }
@@ -287,24 +380,32 @@ export default function Admin() {
   const [universal, setUniversal] = useState([]);
   const [categories, setCategories] = useState([]);
   const [selectedItem, setSelectedItem] = useState(null);
+  const [selectedUniversalId, setSelectedUniversalId] = useState(null);
   const [attrs, setAttrs] = useState([]);
-  const [newValue, setNewValue] = useState({});
+  const [search, setSearch] = useState("");
   const [showNewItemForm, setShowNewItemForm] = useState(false);
   const [newItemMain, setNewItemMain] = useState(null);
   const [newItemSub, setNewItemSub] = useState(null);
   const [newItemName, setNewItemName] = useState("");
 
   function loadItems() { api.adminListItems().then(setItems); }
+  function loadUniversal() { api.adminGetUniversalAttributes().then(setUniversal); }
   useEffect(() => {
     loadItems();
-    api.adminGetUniversalAttributes().then(setUniversal);
+    loadUniversal();
     api.adminCategories().then(setCategories);
   }, []);
 
   async function selectItem(item) {
     setSelectedItem(item);
+    setSelectedUniversalId(null);
     const a = await api.adminGetItemAttributes(item.id);
     setAttrs(a);
+  }
+
+  function selectUniversal(id) {
+    setSelectedUniversalId(id);
+    setSelectedItem(null);
   }
 
   async function reloadAfterCategoryChange(refreshCategories) {
@@ -333,19 +434,6 @@ export default function Admin() {
     setUniversal((prev) => prev.map((a) => (a.id === attrId ? { ...a, weight } : a)));
   }
 
-  async function addValue(attrId) {
-    const value = newValue[attrId];
-    if (!value) return;
-    const r = await api.adminAddValue(attrId, value);
-    setAttrs((prev) => prev.map((a) => (a.id === attrId ? { ...a, values: [...a.values, { id: r.id, value }] } : a)));
-    setNewValue((p) => ({ ...p, [attrId]: "" }));
-  }
-
-  async function deleteValue(attrId, valueId) {
-    await api.adminDeleteValue(valueId);
-    setAttrs((prev) => prev.map((a) => (a.id === attrId ? { ...a, values: a.values.filter((v) => v.id !== valueId) } : a)));
-  }
-
   async function setRequired(attrId, required) {
     await api.adminSetItemAttrRequired(selectedItem.id, attrId, required);
     setAttrs((prev) => prev.map((a) => (a.id === attrId ? { ...a, required } : a)));
@@ -356,6 +444,26 @@ export default function Admin() {
     setUniversal((prev) => prev.map((a) => (a.id === attrId ? { ...a, required } : a)));
   }
 
+  async function renameAttribute(attrId, name, fromUniversal) {
+    await api.adminRenameAttribute(attrId, name);
+    if (fromUniversal) setUniversal((prev) => prev.map((a) => (a.id === attrId ? { ...a, name } : a)));
+    else setAttrs((prev) => prev.map((a) => (a.id === attrId ? { ...a, name } : a)));
+  }
+
+  async function addValue(attrId, value, fromUniversal) {
+    const r = await api.adminAddValue(attrId, value);
+    const patch = (a) => (a.id === attrId ? { ...a, values: [...a.values, { id: r.id, value }] } : a);
+    if (fromUniversal) setUniversal((prev) => prev.map(patch));
+    else setAttrs((prev) => prev.map(patch));
+  }
+
+  async function deleteValue(attrId, valueId, fromUniversal) {
+    await api.adminDeleteValue(valueId);
+    const patch = (a) => (a.id === attrId ? { ...a, values: a.values.filter((v) => v.id !== valueId) } : a);
+    if (fromUniversal) setUniversal((prev) => prev.map(patch));
+    else setAttrs((prev) => prev.map(patch));
+  }
+
   async function addItemAttribute(payload) {
     await api.adminCreateAttribute({ ...payload, item_id: selectedItem.id });
     const a = await api.adminGetItemAttributes(selectedItem.id);
@@ -364,8 +472,7 @@ export default function Admin() {
 
   async function addUniversalAttribute(payload) {
     await api.adminCreateAttribute({ ...payload, universal: true });
-    const u = await api.adminGetUniversalAttributes();
-    setUniversal(u);
+    loadUniversal();
   }
 
   async function removeItemAttribute(attrId) {
@@ -376,8 +483,12 @@ export default function Admin() {
   async function deleteAttributeEntirely(attrId, fromUniversal) {
     if (!window.confirm("פעולה זו תמחק את השאלה הזו לצמיתות מכל המערכת, כולל מכל הדיווחים הקיימים שכוללים תשובה לשאלה הזו. להמשיך?")) return;
     await api.adminDeleteAttribute(attrId);
-    if (fromUniversal) setUniversal((prev) => prev.filter((a) => a.id !== attrId));
-    else setAttrs((prev) => prev.filter((a) => a.id !== attrId));
+    if (fromUniversal) {
+      setUniversal((prev) => prev.filter((a) => a.id !== attrId));
+      if (selectedUniversalId === attrId) setSelectedUniversalId(null);
+    } else {
+      setAttrs((prev) => prev.filter((a) => a.id !== attrId));
+    }
   }
 
   async function createItem() {
@@ -391,9 +502,12 @@ export default function Admin() {
   }
 
   const newItemSubs = categories.find((m) => m.id === newItemMain)?.subs || [];
+  const selectedUniversal = universal.find((a) => a.id === selectedUniversalId);
 
+  const q = search.trim().toLowerCase();
+  const filteredItems = q ? items.filter((it) => it.name.toLowerCase().includes(q)) : items;
   const grouped = {};
-  for (const it of items) {
+  for (const it of filteredItems) {
     const key = it.main_name + " / " + it.sub_name;
     (grouped[key] ||= []).push(it);
   }
@@ -404,58 +518,57 @@ export default function Admin() {
         <OtherItemsPanel onCatalogChanged={loadItems} />
         <OtherAnswersPanel />
       </div>
-      <div style={{ display: "flex", gap: 16, alignItems: "flex-start" }}>
-        <div style={{ width: 260, flexShrink: 0, background: "var(--white)", border: "1px solid var(--border)", borderRadius: "var(--rl)", overflow: "hidden", boxShadow: "var(--shadow)" }}>
-          <div style={{ padding: "11px 14px", background: "#f8fafc", borderBottom: "1px solid var(--border)", fontSize: 13, fontWeight: 600 }}>
-            מאפיינים אוניברסליים
-          </div>
-          <div style={{ padding: 8 }}>
-            {universal.map((a) => (
-              <div key={a.id} style={{ marginBottom: 6, paddingBottom: 6, borderBottom: "1px solid var(--border)" }}>
-                <div className="tree-item">
+
+      <div className="admin-layout">
+        <div className="admin-panel">
+          <div className="admin-panel-h">📋 שאלות בסיס (נשאלות בכל דיווח)</div>
+          <div className="admin-section">
+            <div className="admin-tree">
+              {universal.map((a) => (
+                <div
+                  key={a.id}
+                  className={"admin-tree-item" + (selectedUniversalId === a.id ? " act" : "")}
+                  onClick={() => selectUniversal(a.id)}
+                >
                   <span>{a.name}</span>
-                  <input
-                    className="score-pill"
-                    type="number"
-                    value={a.weight}
-                    onChange={(e) => setUniversalWeight(a.id, Number(e.target.value))}
-                  />
+                  {!!a.required && <span className="badge badge-wa">חובה</span>}
                 </div>
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: 12 }}>
-                  <label style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                    <input type="checkbox" checked={!!a.required} onChange={(e) => setUniversalRequired(a.id, e.target.checked)} />
-                    חובה
-                  </label>
-                  <button className="btn btn-sm" onClick={() => deleteAttributeEntirely(a.id, true)}>מחק</button>
+              ))}
+            </div>
+          </div>
+          <div className="admin-section">
+            <NewAttributeForm onCreate={addUniversalAttribute} />
+          </div>
+
+          <div className="admin-panel-h" style={{ borderTop: "1px solid var(--border)" }}>🗂️ פריטים ({items.length})</div>
+          <div className="admin-section">
+            <div className="admin-search">
+              <input type="text" placeholder="חיפוש פריט..." value={search} onChange={(e) => setSearch(e.target.value)} />
+            </div>
+            <div className="admin-tree">
+              {Object.entries(grouped).map(([group, its]) => (
+                <div key={group}>
+                  <div className="admin-tree-group">{group}</div>
+                  {its.map((it) => (
+                    <div
+                      key={it.id}
+                      className={"admin-tree-item" + (selectedItem?.id === it.id ? " act" : "")}
+                      onClick={() => selectItem(it)}
+                    >
+                      <span>{it.name}</span>
+                    </div>
+                  ))}
                 </div>
-              </div>
-            ))}
-            <details>
-              <summary style={{ cursor: "pointer", fontSize: 13, color: "var(--pr)" }}>+ הוסף שאלה אוניברסלית</summary>
-              <NewAttributeForm onCreate={addUniversalAttribute} />
-            </details>
+              ))}
+              {!Object.keys(grouped).length && <p className="muted" style={{ padding: 8 }}>לא נמצאו פריטים.</p>}
+            </div>
           </div>
-          <div style={{ padding: "11px 14px", background: "#f8fafc", borderTop: "1px solid var(--border)", borderBottom: "1px solid var(--border)", fontSize: 13, fontWeight: 600 }}>
-            פריטים
-          </div>
-          <div style={{ padding: 8, maxHeight: 500, overflowY: "auto" }}>
-            {Object.entries(grouped).map(([group, its]) => (
-              <div key={group}>
-                <div className="tree-group-label">{group}</div>
-                {its.map((it) => (
-                  <div key={it.id} className={"tree-item tree-child" + (selectedItem?.id === it.id ? " act" : "")} onClick={() => selectItem(it)}>
-                    <span>{it.name}</span>
-                  </div>
-                ))}
-              </div>
-            ))}
-          </div>
-          <div style={{ padding: 8, borderTop: "1px solid var(--border)" }}>
+          <div className="admin-section">
             {!showNewItemForm && (
-              <button className="btn btn-sm" style={{ width: "100%" }} onClick={() => setShowNewItemForm(true)}>+ הוסף פריט חדש</button>
+              <button className="admin-add-btn" onClick={() => setShowNewItemForm(true)}>+ הוסף פריט חדש</button>
             )}
             {showNewItemForm && (
-              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                 <select value={newItemMain || ""} onChange={(e) => { setNewItemMain(Number(e.target.value) || null); setNewItemSub(null); }}>
                   <option value="">— קטגוריה —</option>
                   {categories.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
@@ -474,78 +587,78 @@ export default function Admin() {
           </div>
         </div>
 
-        <div style={{ flex: 1, minWidth: 0 }}>
-          {!selectedItem && (
-            <div className="card"><div className="card-b muted">בחר פריט מהרשימה כדי לערוך את השאלות והמשקלים שלו.</div></div>
+        <div style={{ minWidth: 0 }}>
+          {!selectedItem && !selectedUniversal && (
+            <div className="admin-panel">
+              <div className="admin-empty">
+                <div className="admin-empty-icon">🗂️</div>
+                <div>בחר/י שאלת בסיס או פריט מהרשימה בצד כדי לערוך אותו.</div>
+              </div>
+            </div>
           )}
+
+          {selectedUniversal && (
+            <div className="admin-panel">
+              <div className="admin-panel-h">עריכת שאלת בסיס</div>
+              <div className="admin-section">
+                <QuestionCard
+                  attr={selectedUniversal}
+                  onRename={(name) => renameAttribute(selectedUniversal.id, name, true)}
+                  onSetWeight={(w) => setUniversalWeight(selectedUniversal.id, w)}
+                  onSetRequired={(r) => setUniversalRequired(selectedUniversal.id, r)}
+                  onAddValue={(v) => addValue(selectedUniversal.id, v, true)}
+                  onDeleteValue={(vid) => deleteValue(selectedUniversal.id, vid, true)}
+                  onDeleteEntirely={() => deleteAttributeEntirely(selectedUniversal.id, true)}
+                />
+              </div>
+            </div>
+          )}
+
           {selectedItem && (
-            <div className="card">
-              <div className="card-h">עריכת שדות — {selectedItem.name}</div>
-              <div className="card-b">
+            <div className="admin-panel">
+              <div className="item-header">
+                <div>
+                  <div className="item-header-title">{selectedItem.name}</div>
+                  <div className="item-header-sub">{selectedItem.main_name} / {selectedItem.sub_name}</div>
+                </div>
+              </div>
+              <div className="admin-section">
                 <CategoryEditor item={selectedItem} categories={categories} onMoved={reloadAfterCategoryChange} />
 
-                <div style={{ marginBottom: 18, paddingBottom: 14, borderBottom: "1px solid var(--border)" }}>
+                <div style={{ marginBottom: 18, paddingBottom: 16, borderBottom: "1px solid var(--border)" }}>
                   <label>שאלות מיוחדות</label>
-                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                    <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13 }}>
+                  <div className="flag-grid">
+                    <label className="flag-chip">
                       <input type="checkbox" checked={!!selectedItem.can_contain_items} onChange={(e) => setFlag("can_contain_items", e.target.checked)} />
-                      לשאול "מה היה בפנים?" (עד 4 פריטים)
+                      "מה היה בפנים?" (עד 4 פריטים)
                     </label>
-                    <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13 }}>
+                    <label className="flag-chip">
                       <input type="checkbox" checked={!!selectedItem.can_be_contained} onChange={(e) => setFlag("can_be_contained", e.target.checked)} />
-                      לשאול "האם הפריט היה בתוך משהו?"
+                      "האם היה בתוך משהו?"
                     </label>
-                    <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13 }}>
+                    <label className="flag-chip">
                       <input type="checkbox" checked={!!selectedItem.can_have_nearby} onChange={(e) => setFlag("can_have_nearby", e.target.checked)} />
-                      לשאול "האם היו פריטים נוספים בסמוך?"
+                      "פריטים נוספים בסמוך?"
                     </label>
                   </div>
                 </div>
 
-                {!attrs.length && <p className="muted">לפריט זה אין שאלות מוגדרות.</p>}
+                {!attrs.length && <p className="muted" style={{ marginBottom: 12 }}>לפריט זה אין שאלות מוגדרות.</p>}
                 {attrs.map((a) => (
-                  <div key={a.id} style={{ marginBottom: 18, paddingBottom: 14, borderBottom: "1px solid var(--border)" }}>
-                    <div className="row" style={{ alignItems: "flex-end" }}>
-                      <div className="col">
-                        <label>שאלה</label>
-                        <input type="text" value={a.name} disabled />
-                      </div>
-                      <div className="col" style={{ flex: "0 0 140px" }}>
-                        <label>משקל בניקוד התאמה</label>
-                        <input type="number" value={a.weight} onChange={(e) => setWeight(a.id, Number(e.target.value))} />
-                      </div>
-                      <div className="col" style={{ flex: "0 0 80px" }}>
-                        <label style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                          <input type="checkbox" checked={!!a.required} onChange={(e) => setRequired(a.id, e.target.checked)} />
-                          חובה
-                        </label>
-                      </div>
-                      <div className="col" style={{ flex: "0 0 auto", display: "flex", gap: 6 }}>
-                        <button className="btn btn-sm" onClick={() => removeItemAttribute(a.id)}>✕ הסר מפריט זה</button>
-                        <button className="btn btn-sm" onClick={() => deleteAttributeEntirely(a.id, false)}>מחק לצמיתות</button>
-                      </div>
-                    </div>
-                    {(a.input_type === "single" || a.input_type === "multi") && (
-                      <div style={{ marginTop: 8 }}>
-                        <label>ערכים אפשריים</label>
-                        <div style={{ display: "flex", flexWrap: "wrap", gap: 7, marginBottom: 8 }}>
-                          {a.values.map((v) => (
-                            <span className="tag" key={v.id}>{v.value} <x onClick={() => deleteValue(a.id, v.id)}>✕</x></span>
-                          ))}
-                        </div>
-                        <div style={{ display: "flex", gap: 8 }}>
-                          <input type="text" placeholder="ערך חדש..." value={newValue[a.id] || ""} onChange={(e) => setNewValue((p) => ({ ...p, [a.id]: e.target.value }))} />
-                          <button className="btn btn-pr btn-sm" onClick={() => addValue(a.id)}>+ הוסף</button>
-                        </div>
-                      </div>
-                    )}
-                  </div>
+                  <QuestionCard
+                    key={a.id}
+                    attr={a}
+                    onRename={(name) => renameAttribute(a.id, name, false)}
+                    onSetWeight={(w) => setWeight(a.id, w)}
+                    onSetRequired={(r) => setRequired(a.id, r)}
+                    onAddValue={(v) => addValue(a.id, v, false)}
+                    onDeleteValue={(vid) => deleteValue(a.id, vid, false)}
+                    onRemoveFromItem={() => removeItemAttribute(a.id)}
+                    onDeleteEntirely={() => deleteAttributeEntirely(a.id, false)}
+                  />
                 ))}
 
-                <details>
-                  <summary style={{ cursor: "pointer", fontSize: 13, color: "var(--pr)" }}>+ הוסף שאלה לפריט זה</summary>
-                  <NewAttributeForm onCreate={addItemAttribute} />
-                </details>
+                <NewAttributeForm onCreate={addItemAttribute} />
               </div>
             </div>
           )}

@@ -142,3 +142,55 @@ textarea{resize:vertical;min-height:72px;line-height:1.5}
 
 .detail-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px}
 .detail-side-h{font-size:13px;font-weight:700;margin-bottom:8px;padding-bottom:6px;border-bottom:2px solid var(--border)}
+
+/* ---- admin screen ---- */
+.admin-layout{display:grid;grid-template-columns:300px 1fr;gap:20px;align-items:start}
+@media (max-width:860px){.admin-layout{grid-template-columns:1fr}}
+
+.admin-panel{background:var(--white);border:1px solid var(--border);border-radius:var(--rl);overflow:hidden;box-shadow:var(--shadow)}
+.admin-panel-h{padding:13px 16px;background:linear-gradient(180deg,#fafbfd,#f4f6f9);border-bottom:1px solid var(--border);font-size:13px;font-weight:700;color:var(--text);letter-spacing:.2px}
+.admin-section{padding:12px}
+.admin-section + .admin-section{border-top:1px solid var(--border)}
+
+.admin-search{position:relative;margin-bottom:10px}
+.admin-search input{padding-right:32px}
+.admin-search::before{content:'🔍';position:absolute;right:10px;top:50%;transform:translateY(-50%);font-size:12px;opacity:.5;pointer-events:none}
+
+.admin-tree{max-height:460px;overflow-y:auto}
+.admin-tree-group{font-size:11px;color:var(--text3);padding:10px 8px 4px;font-weight:700;text-transform:uppercase;letter-spacing:.4px}
+.admin-tree-item{padding:8px 10px;border-radius:var(--r);cursor:pointer;font-size:13px;display:flex;align-items:center;justify-content:space-between;color:var(--text);transition:background .12s}
+.admin-tree-item:hover{background:#f1f5f9}
+.admin-tree-item.act{background:var(--pr);color:#fff;font-weight:600}
+
+.admin-add-btn{width:100%;padding:9px;border:1.5px dashed var(--border2);border-radius:var(--r);background:transparent;color:var(--text2);font-size:13px;font-weight:600;cursor:pointer;transition:all .12s}
+.admin-add-btn:hover{border-color:var(--pr);color:var(--pr);background:var(--pr-l)}
+
+.admin-empty{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:60px 20px;color:var(--text2);text-align:center}
+.admin-empty-icon{font-size:36px;opacity:.6}
+
+.item-header{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:16px 18px;background:linear-gradient(135deg,var(--pr-l),#fff);border-bottom:1px solid var(--border)}
+.item-header-title{font-size:16px;font-weight:700;color:var(--text)}
+.item-header-sub{font-size:12px;color:var(--text2);margin-top:2px}
+
+.flag-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:8px}
+.flag-chip{display:flex;align-items:center;gap:7px;padding:9px 12px;border:1px solid var(--border);border-radius:var(--r);font-size:13px;cursor:pointer;background:var(--white);transition:all .12s}
+.flag-chip:hover{border-color:var(--pr-b)}
+.flag-chip input{width:auto;margin:0}
+
+.q-card{border:1px solid var(--border);border-radius:var(--r);margin-bottom:10px;overflow:hidden;transition:box-shadow .12s}
+.q-card:hover{box-shadow:0 2px 10px rgba(0,0,0,.06)}
+.q-card-top{display:flex;align-items:center;gap:10px;padding:12px 14px;background:#fafbfc;border-bottom:1px solid var(--border);flex-wrap:wrap}
+.q-card-name-wrap{display:flex;align-items:center;gap:6px;flex:1;min-width:140px}
+.q-card-name{font-size:14px;font-weight:600;color:var(--text);background:transparent;border:1px solid transparent;border-radius:var(--r);padding:4px 7px;width:auto;flex:1;min-width:100px}
+.q-card-name:hover{border-color:var(--border2);background:var(--white)}
+.q-card-name:focus{border-color:var(--pr);background:var(--white);box-shadow:0 0 0 3px var(--pr-l)}
+.q-card-actions{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.q-card-body{padding:12px 14px}
+
+.req-toggle{display:flex;align-items:center;gap:5px;font-size:12px;font-weight:600;color:var(--text2);cursor:pointer;padding:5px 9px;border-radius:999px;border:1px solid var(--border2);transition:all .12s}
+.req-toggle input{width:auto;margin:0}
+.req-toggle.on{background:var(--wa-l);color:#92400e;border-color:var(--wa-b)}
+
+.chip-row{display:flex;flex-wrap:wrap;gap:7px;margin-bottom:9px}
+.chip-add-row{display:flex;gap:7px}
+.chip-add-row input{flex:1}
