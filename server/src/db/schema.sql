@@ -38,7 +38,7 @@ CREATE TABLE items (
 
 CREATE TABLE attributes (
   id         SERIAL PRIMARY KEY,
-  name       TEXT NOT NULL UNIQUE,
+  name       TEXT NOT NULL,  -- not unique: e.g. many items each have their own "צבע"
   input_type TEXT NOT NULL DEFAULT 'single' CHECK (input_type IN ('single','multi','text','number','boolean')),
   scope      TEXT NOT NULL DEFAULT 'item' CHECK (scope IN ('item','universal')),
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()

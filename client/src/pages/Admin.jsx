@@ -303,13 +303,28 @@ function NewAttributeForm({ onCreate }) {
 function QuestionCard({ attr, onRename, onSetWeight, onSetRequired, onAddValue, onDeleteValue, onRemoveFromItem, onDeleteEntirely }) {
   const [name, setName] = useState(attr.name);
   const [newValue, setNewValue] = useState("");
+  const [nameStatus, setNameStatus] = useState(null); // null | "saving" | "saved" | error text
 
   useEffect(() => setName(attr.name), [attr.name]);
 
-  function commitName() {
+  const nameDirty = name.trim() !== attr.name;
+
+  async function saveName() {
     const trimmed = name.trim();
-    if (trimmed && trimmed !== attr.name) onRename(trimmed);
-    else setName(attr.name);
+    if (!trimmed || trimmed === attr.name) return setName(attr.name);
+    setNameStatus("saving");
+    try {
+      await onRename(trimmed);
+      setNameStatus("saved");
+      setTimeout(() => setNameStatus((s) => (s === "saved" ? null : s)), 2000);
+    } catch (e) {
+      setNameStatus(e.message || "השמירה נכשלה");
+    }
+  }
+
+  function cancelName() {
+    setName(attr.name);
+    setNameStatus(null);
   }
 
   async function addValue() {
@@ -328,11 +343,25 @@ function QuestionCard({ attr, onRename, onSetWeight, onSetRequired, onAddValue, 
             className="q-card-name"
             type="text"
             value={name}
-            onChange={(e) => setName(e.target.value)}
-            onBlur={commitName}
-            onKeyDown={(e) => { if (e.key === "Enter") e.target.blur(); }}
+            onChange={(e) => { setName(e.target.value); setNameStatus(null); }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") saveName();
+              if (e.key === "Escape") cancelName();
+            }}
             title="לחיצה לעריכת שם השאלה"
           />
+          {nameDirty && (
+            <>
+              <button className="btn btn-sm btn-pr" onClick={saveName} disabled={!name.trim() || nameStatus === "saving"}>
+                {nameStatus === "saving" ? "שומר..." : "שמור"}
+              </button>
+              <button className="btn btn-sm" onClick={cancelName}>ביטול</button>
+            </>
+          )}
+          {nameStatus === "saved" && <span className="muted">✓ נשמר</span>}
+          {nameStatus && nameStatus !== "saving" && nameStatus !== "saved" && (
+            <span className="muted" style={{ color: "var(--da)" }}>השמירה נכשלה</span>
+          )}
           <span className="badge badge-gray">{INPUT_TYPE_LABEL[attr.input_type] || attr.input_type}</span>
         </div>
         <div className="q-card-actions">
