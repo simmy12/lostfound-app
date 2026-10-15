@@ -49,6 +49,7 @@ CREATE TABLE attribute_values (
   attribute_id INTEGER NOT NULL REFERENCES attributes(id) ON DELETE CASCADE,
   value        TEXT NOT NULL,
   display_order INTEGER NOT NULL DEFAULT 0,
+  hidden       BOOLEAN NOT NULL DEFAULT false, -- used by past reports, so hidden instead of deleted
   UNIQUE (attribute_id, value)
 );
 
@@ -59,6 +60,7 @@ CREATE TABLE item_attributes (
   display_order INTEGER NOT NULL DEFAULT 0,
   weight        INTEGER NOT NULL DEFAULT 10,
   required      BOOLEAN NOT NULL DEFAULT false, -- admin-togglable; nothing is required by default
+  allow_other   BOOLEAN NOT NULL DEFAULT true,  -- offer the automatic "אחר" option
   PRIMARY KEY (item_id, attribute_id)
 );
 
@@ -67,7 +69,8 @@ CREATE TABLE universal_attributes (
   attribute_id  INTEGER PRIMARY KEY REFERENCES attributes(id) ON DELETE CASCADE,
   display_order INTEGER NOT NULL DEFAULT 0,
   weight        INTEGER NOT NULL DEFAULT 10,
-  required      BOOLEAN NOT NULL DEFAULT false
+  required      BOOLEAN NOT NULL DEFAULT false,
+  allow_other   BOOLEAN NOT NULL DEFAULT true
 );
 
 -- ===== Reports =====

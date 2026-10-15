@@ -244,20 +244,50 @@ function parseValuesInput(text) {
   return text.split(/[\n,]/).map((v) => v.trim()).filter(Boolean);
 }
 
-// Inline "+ add a new question" form, used both for a specific item and for universal questions.
-function NewAttributeForm({ onCreate }) {
-  const [open, setOpen] = useState(false);
+// "item1, item2, item3 ועוד 5" — short summary of which items share a question
+function sharedSummary(names, max = 4) {
+  if (names.length <= max) return names.join(", ");
+  return names.slice(0, max).join(", ") + ` ועוד ${names.length - max}`;
+}
+
+// "+ add a question" form. For items it can either link an existing (shared) question — so the
+// item uses the same answer list as every other item asking it — or create a brand-new one.
+// onSubmit gets { existingId } or { payload: {name, input_type, values} }. alwaysOpen/submitLabel/
+// disabled are for the bulk "add to several items" panel.
+function NewAttributeForm({ onSubmit, allowExisting, alwaysOpen, submitLabel = "+ הוסף שאלה", disabled }) {
+  const [open, setOpen] = useState(!!alwaysOpen);
+  const [mode, setMode] = useState(allowExisting ? "existing" : "new");
+  const [existing, setExisting] = useState([]);
+  const [existingId, setExistingId] = useState(null);
   const [name, setName] = useState("");
   const [inputType, setInputType] = useState("single");
   const [valuesText, setValuesText] = useState("");
+  const [busy, setBusy] = useState(false);
 
-  async function create() {
-    if (!name.trim()) return;
-    const values = inputType === "single" || inputType === "multi" ? parseValuesInput(valuesText) : [];
-    await onCreate({ name: name.trim(), input_type: inputType, values });
-    setName("");
-    setValuesText("");
-    setOpen(false);
+  useEffect(() => {
+    if (open && allowExisting) api.adminListAttributes().then(setExisting);
+  }, [open, allowExisting]);
+
+  const ready = mode === "existing" ? !!existingId : !!name.trim();
+
+  async function submit() {
+    if (!ready || disabled) return;
+    setBusy(true);
+    try {
+      if (mode === "existing") {
+        await onSubmit({ existingId });
+      } else {
+        const values = inputType === "single" || inputType === "multi" ? parseValuesInput(valuesText) : [];
+        await onSubmit({ payload: { name: name.trim(), input_type: inputType, values } });
+      }
+      setName("");
+      setValuesText("");
+      setExistingId(null);
+      if (!alwaysOpen) setOpen(false);
+      else if (allowExisting) api.adminListAttributes().then(setExisting);
+    } finally {
+      setBusy(false);
+    }
   }
 
   if (!open) {
@@ -267,6 +297,33 @@ function NewAttributeForm({ onCreate }) {
   return (
     <div className="q-card">
       <div className="q-card-body">
+        {allowExisting && (
+          <div className="opts" style={{ marginBottom: 10 }}>
+            <button type="button" className={"opt-btn" + (mode === "existing" ? " sel" : "")} onClick={() => setMode("existing")}>
+              שאלה קיימת (רשימה משותפת)
+            </button>
+            <button type="button" className={"opt-btn" + (mode === "new" ? " sel" : "")} onClick={() => setMode("new")}>
+              שאלה חדשה
+            </button>
+          </div>
+        )}
+        {mode === "existing" && (
+          <div style={{ marginBottom: 10 }}>
+            <label>בחר/י שאלה</label>
+            <select value={existingId || ""} onChange={(e) => setExistingId(Number(e.target.value) || null)}>
+              <option value="">— בחר/י —</option>
+              {existing.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.name} ({a.item_count} פריטים{a.item_names.length ? ": " + sharedSummary(a.item_names, 3) : ""})
+                </option>
+              ))}
+            </select>
+            <p className="muted" style={{ fontSize: 12, marginTop: 4 }}>
+              השאלה תשתמש באותה רשימת תשובות כמו שאר הפריטים — שינוי ברשימה ישפיע על כולם.
+            </p>
+          </div>
+        )}
+        {mode === "new" && <>
         <div className="row" style={{ alignItems: "flex-end" }}>
           <div className="col">
             <label>שם השאלה</label>
@@ -288,9 +345,12 @@ function NewAttributeForm({ onCreate }) {
             <textarea value={valuesText} onChange={(e) => setValuesText(e.target.value)} placeholder={"אדום\nכחול\nירוק"} />
           </div>
         )}
+        </>}
         <div style={{ display: "flex", gap: 8 }}>
-          <button className="btn btn-sm btn-pr" onClick={create} disabled={!name.trim()}>+ הוסף שאלה</button>
-          <button className="btn btn-sm" onClick={() => setOpen(false)}>ביטול</button>
+          <button className="btn btn-sm btn-pr" onClick={submit} disabled={!ready || disabled || busy}>
+            {busy ? "מוסיף..." : submitLabel}
+          </button>
+          {!alwaysOpen && <button className="btn btn-sm" onClick={() => setOpen(false)}>ביטול</button>}
         </div>
       </div>
     </div>
@@ -300,7 +360,7 @@ function NewAttributeForm({ onCreate }) {
 // One question's full editor card: rename, required toggle, weight, and — for choice-type
 // questions — its answer options. Shared by item-specific and universal (base) questions, so
 // both get exactly the same editing power.
-function QuestionCard({ attr, onRename, onSetWeight, onSetRequired, onAddValue, onDeleteValue, onRemoveFromItem, onDeleteEntirely }) {
+function QuestionCard({ attr, onRename, onSetWeight, onSetRequired, onSetAllowOther, onAddValue, onDeleteValue, onRemoveFromItem, onDeleteEntirely }) {
   const [name, setName] = useState(attr.name);
   const [newValue, setNewValue] = useState("");
   const [nameStatus, setNameStatus] = useState(null); // null | "saving" | "saved" | error text
@@ -334,6 +394,7 @@ function QuestionCard({ attr, onRename, onSetWeight, onSetRequired, onAddValue, 
   }
 
   const isChoice = attr.input_type === "single" || attr.input_type === "multi";
+  const shared = attr.shared_items || [];
 
   return (
     <div className="q-card">
@@ -369,6 +430,12 @@ function QuestionCard({ attr, onRename, onSetWeight, onSetRequired, onAddValue, 
             <input type="checkbox" checked={!!attr.required} onChange={(e) => onSetRequired(e.target.checked)} />
             חובה
           </label>
+          {isChoice && (
+            <label className={"req-toggle" + (attr.allow_other !== false ? " on" : "")} title='האם להציג למשתמש את האפשרות "אחר" עם מילוי חופשי'>
+              <input type="checkbox" checked={attr.allow_other !== false} onChange={(e) => onSetAllowOther(e.target.checked)} />
+              אפשר "אחר"
+            </label>
+          )}
           <input
             className="score-pill"
             type="number"
@@ -376,15 +443,29 @@ function QuestionCard({ attr, onRename, onSetWeight, onSetRequired, onAddValue, 
             value={attr.weight}
             onChange={(e) => onSetWeight(Number(e.target.value))}
           />
-          {onRemoveFromItem && <button className="btn btn-sm" onClick={onRemoveFromItem}>הסר מפריט זה</button>}
-          <button className="btn btn-sm btn-da" onClick={onDeleteEntirely}>מחק לצמיתות</button>
+          {onRemoveFromItem && (
+            <button className="btn btn-sm" onClick={onRemoveFromItem} title="השאלה תוסר רק מהפריט הזה, ותישאר בשאר הפריטים">
+              הסר מהפריט הזה בלבד
+            </button>
+          )}
+          <button className="btn btn-sm btn-da" onClick={onDeleteEntirely} title="השאלה תימחק מכל הפריטים שיש להם אותה">
+            {onRemoveFromItem ? `מחק מכל הפריטים (${shared.length || 1})` : "מחק שאלה זו"}
+          </button>
         </div>
       </div>
+      {shared.length > 1 && (
+        <div className="muted" style={{ fontSize: 12, padding: "8px 14px 0" }} title={shared.join(", ")}>
+          🔗 משותפת ל-{shared.length} פריטים: {sharedSummary(shared)} — שינוי בשם או ברשימה ישפיע על כולם
+        </div>
+      )}
       {isChoice && (
         <div className="q-card-body">
           <div className="chip-row">
             {attr.values.map((v) => (
-              <span className="tag" key={v.id}>{v.value} <x onClick={() => onDeleteValue(v.id)}>✕</x></span>
+              <span className="tag" key={v.id}>
+                {v.value}
+                <button type="button" className="tag-x" title="הסר תשובה זו" onClick={() => onDeleteValue(v)}>✕</button>
+              </span>
             ))}
             {!attr.values.length && <span className="muted">אין ערכים מוגדרים עדיין</span>}
           </div>
@@ -404,6 +485,79 @@ function QuestionCard({ attr, onRename, onSetWeight, onSetRequired, onAddValue, 
   );
 }
 
+// Add one question (existing/shared or brand-new) to many items at once: tick items, pick the
+// question, submit. Items that already ask the question are left as they are.
+function BulkAddPanel({ items, onClose }) {
+  const [checked, setChecked] = useState(new Set());
+  const [search, setSearch] = useState("");
+  const [result, setResult] = useState(null);
+
+  const q = search.trim().toLowerCase();
+  const shown = q ? items.filter((it) => it.name.toLowerCase().includes(q)) : items;
+  const grouped = {};
+  for (const it of shown) (grouped[it.main_name + " / " + it.sub_name] ||= []).push(it);
+
+  function toggle(ids, on) {
+    setChecked((prev) => {
+      const next = new Set(prev);
+      for (const id of ids) on ? next.add(id) : next.delete(id);
+      return next;
+    });
+    setResult(null);
+  }
+
+  async function submit({ existingId, payload }) {
+    const ids = [...checked];
+    if (existingId) await api.adminLinkAttribute(existingId, ids);
+    else await api.adminCreateAttribute({ ...payload, item_ids: ids });
+    setResult(`✓ השאלה נוספה ל-${ids.length} פריטים`);
+    setChecked(new Set());
+  }
+
+  return (
+    <div className="admin-panel">
+      <div className="admin-panel-h" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <span>☑️ הוספת שאלה לכמה פריטים בבת אחת</span>
+        <button className="btn btn-sm" onClick={onClose}>סגור</button>
+      </div>
+      <div className="admin-section">
+        <label>1. סמנו את הפריטים ({checked.size} נבחרו)</label>
+        <div className="admin-search">
+          <input type="text" placeholder="חיפוש פריט..." value={search} onChange={(e) => setSearch(e.target.value)} />
+        </div>
+        <div style={{ display: "flex", gap: 6, marginBottom: 6 }}>
+          <button className="btn btn-sm" onClick={() => toggle(shown.map((it) => it.id), true)}>סמן את כל המוצגים ({shown.length})</button>
+          <button className="btn btn-sm" onClick={() => setChecked(new Set())} disabled={!checked.size}>נקה בחירה</button>
+        </div>
+        <div className="admin-tree" style={{ maxHeight: 320, overflowY: "auto", border: "1px solid var(--border)", borderRadius: "var(--r)", marginBottom: 16 }}>
+          {Object.entries(grouped).map(([group, its]) => (
+            <div key={group}>
+              <div className="admin-tree-group">{group}</div>
+              {its.map((it) => (
+                <label key={it.id} className="admin-tree-item" style={{ gap: 8, justifyContent: "flex-start", cursor: "pointer" }}>
+                  <input type="checkbox" style={{ width: "auto", margin: 0 }} checked={checked.has(it.id)} onChange={(e) => toggle([it.id], e.target.checked)} />
+                  <span>{it.name}</span>
+                </label>
+              ))}
+            </div>
+          ))}
+          {!shown.length && <p className="muted" style={{ padding: 8 }}>לא נמצאו פריטים.</p>}
+        </div>
+
+        <label>2. בחרו את השאלה</label>
+        <NewAttributeForm
+          allowExisting
+          alwaysOpen
+          disabled={!checked.size}
+          submitLabel={checked.size ? `+ הוסף ל-${checked.size} פריטים` : "סמנו פריטים קודם"}
+          onSubmit={submit}
+        />
+        {result && <p style={{ color: "#15803d", fontWeight: 600 }}>{result}</p>}
+      </div>
+    </div>
+  );
+}
+
 export default function Admin() {
   const [items, setItems] = useState([]);
   const [universal, setUniversal] = useState([]);
@@ -416,6 +570,7 @@ export default function Admin() {
   const [newItemMain, setNewItemMain] = useState(null);
   const [newItemSub, setNewItemSub] = useState(null);
   const [newItemName, setNewItemName] = useState("");
+  const [bulkOpen, setBulkOpen] = useState(false);
 
   function loadItems() { api.adminListItems().then(setItems); }
   function loadUniversal() { api.adminGetUniversalAttributes().then(setUniversal); }
@@ -428,6 +583,7 @@ export default function Admin() {
   async function selectItem(item) {
     setSelectedItem(item);
     setSelectedUniversalId(null);
+    setBulkOpen(false);
     const a = await api.adminGetItemAttributes(item.id);
     setAttrs(a);
   }
@@ -435,6 +591,7 @@ export default function Admin() {
   function selectUniversal(id) {
     setSelectedUniversalId(id);
     setSelectedItem(null);
+    setBulkOpen(false);
   }
 
   async function reloadAfterCategoryChange(refreshCategories) {
@@ -486,31 +643,56 @@ export default function Admin() {
     else setAttrs((prev) => prev.map(patch));
   }
 
-  async function deleteValue(attrId, valueId, fromUniversal) {
-    await api.adminDeleteValue(valueId);
-    const patch = (a) => (a.id === attrId ? { ...a, values: a.values.filter((v) => v.id !== valueId) } : a);
+  async function setAllowOther(attrId, allow_other) {
+    await api.adminSetItemAttrAllowOther(selectedItem.id, attrId, allow_other);
+    setAttrs((prev) => prev.map((a) => (a.id === attrId ? { ...a, allow_other } : a)));
+  }
+
+  async function setUniversalAllowOther(attrId, allow_other) {
+    await api.adminSetUniversalAllowOther(attrId, allow_other);
+    setUniversal((prev) => prev.map((a) => (a.id === attrId ? { ...a, allow_other } : a)));
+  }
+
+  // a value used by past reports is hidden (not deleted) server-side — either way it leaves the list
+  async function deleteValue(attr, value, fromUniversal) {
+    const sharedNote = attr.shared_items?.length > 1 ? `\nהרשימה משותפת ל-${attr.shared_items.length} פריטים — התשובה תוסר מכולם.` : "";
+    if (!window.confirm(`להסיר את התשובה "${value.value}" מהשאלה "${attr.name}"?${sharedNote}`)) return;
+    try {
+      await api.adminDeleteValue(value.id);
+    } catch {
+      window.alert("ההסרה נכשלה, נסו שוב.");
+      return;
+    }
+    const patch = (a) => (a.id === attr.id ? { ...a, values: a.values.filter((v) => v.id !== value.id) } : a);
     if (fromUniversal) setUniversal((prev) => prev.map(patch));
     else setAttrs((prev) => prev.map(patch));
   }
 
-  async function addItemAttribute(payload) {
-    await api.adminCreateAttribute({ ...payload, item_id: selectedItem.id });
+  async function addItemAttribute({ existingId, payload }) {
+    if (existingId) await api.adminLinkAttribute(existingId, [selectedItem.id]);
+    else await api.adminCreateAttribute({ ...payload, item_id: selectedItem.id });
     const a = await api.adminGetItemAttributes(selectedItem.id);
     setAttrs(a);
   }
 
-  async function addUniversalAttribute(payload) {
+  async function addUniversalAttribute({ payload }) {
     await api.adminCreateAttribute({ ...payload, universal: true });
     loadUniversal();
   }
 
-  async function removeItemAttribute(attrId) {
-    await api.adminRemoveItemAttribute(selectedItem.id, attrId);
-    setAttrs((prev) => prev.filter((a) => a.id !== attrId));
+  async function removeItemAttribute(attr) {
+    if (!window.confirm(`להסיר את השאלה "${attr.name}" מהפריט "${selectedItem.name}" בלבד?\nהשאלה תישאר בשאר הפריטים.`)) return;
+    await api.adminRemoveItemAttribute(selectedItem.id, attr.id);
+    setAttrs((prev) => prev.filter((a) => a.id !== attr.id));
   }
 
   async function deleteAttributeEntirely(attrId, fromUniversal) {
-    if (!window.confirm("פעולה זו תמחק את השאלה הזו לצמיתות מכל המערכת, כולל מכל הדיווחים הקיימים שכוללים תשובה לשאלה הזו. להמשיך?")) return;
+    const attr = (fromUniversal ? universal : attrs).find((a) => a.id === attrId);
+    const n = attr?.shared_items?.length || 1;
+    const msg = fromUniversal
+      ? `למחוק את שאלת הבסיס "${attr?.name}" לגמרי?\nהיא לא תופיע יותר בדיווחים, והתשובות שניתנו לה בדיווחים קיימים יימחקו.`
+      : `למחוק את השאלה "${attr?.name}" מכל ${n} הפריטים שיש להם אותה?\nהתשובות שניתנו לה בדיווחים קיימים יימחקו.\n\nאם רוצים להסיר רק מהפריט הזה — לחצו ביטול ובחרו "הסר מהפריט הזה בלבד".`;
+    if (!window.confirm(msg)) return;
     await api.adminDeleteAttribute(attrId);
     if (fromUniversal) {
       setUniversal((prev) => prev.filter((a) => a.id !== attrId));
@@ -566,7 +748,7 @@ export default function Admin() {
             </div>
           </div>
           <div className="admin-section">
-            <NewAttributeForm onCreate={addUniversalAttribute} />
+            <NewAttributeForm onSubmit={addUniversalAttribute} />
           </div>
 
           <div className="admin-panel-h" style={{ borderTop: "1px solid var(--border)" }}>🗂️ פריטים ({items.length})</div>
@@ -574,6 +756,13 @@ export default function Admin() {
             <div className="admin-search">
               <input type="text" placeholder="חיפוש פריט..." value={search} onChange={(e) => setSearch(e.target.value)} />
             </div>
+            <button
+              className="admin-add-btn"
+              style={{ marginBottom: 8 }}
+              onClick={() => { setBulkOpen(true); setSelectedItem(null); setSelectedUniversalId(null); }}
+            >
+              ☑️ הוספת שאלה לכמה פריטים
+            </button>
             <div className="admin-tree">
               {Object.entries(grouped).map(([group, its]) => (
                 <div key={group}>
@@ -617,7 +806,9 @@ export default function Admin() {
         </div>
 
         <div style={{ minWidth: 0 }}>
-          {!selectedItem && !selectedUniversal && (
+          {bulkOpen && <BulkAddPanel items={items} onClose={() => setBulkOpen(false)} />}
+
+          {!bulkOpen && !selectedItem && !selectedUniversal && (
             <div className="admin-panel">
               <div className="admin-empty">
                 <div className="admin-empty-icon">🗂️</div>
@@ -635,8 +826,9 @@ export default function Admin() {
                   onRename={(name) => renameAttribute(selectedUniversal.id, name, true)}
                   onSetWeight={(w) => setUniversalWeight(selectedUniversal.id, w)}
                   onSetRequired={(r) => setUniversalRequired(selectedUniversal.id, r)}
+                  onSetAllowOther={(on) => setUniversalAllowOther(selectedUniversal.id, on)}
                   onAddValue={(v) => addValue(selectedUniversal.id, v, true)}
-                  onDeleteValue={(vid) => deleteValue(selectedUniversal.id, vid, true)}
+                  onDeleteValue={(v) => deleteValue(selectedUniversal, v, true)}
                   onDeleteEntirely={() => deleteAttributeEntirely(selectedUniversal.id, true)}
                 />
               </div>
@@ -680,14 +872,15 @@ export default function Admin() {
                     onRename={(name) => renameAttribute(a.id, name, false)}
                     onSetWeight={(w) => setWeight(a.id, w)}
                     onSetRequired={(r) => setRequired(a.id, r)}
+                    onSetAllowOther={(on) => setAllowOther(a.id, on)}
                     onAddValue={(v) => addValue(a.id, v, false)}
-                    onDeleteValue={(vid) => deleteValue(a.id, vid, false)}
-                    onRemoveFromItem={() => removeItemAttribute(a.id)}
+                    onDeleteValue={(v) => deleteValue(a, v, false)}
+                    onRemoveFromItem={() => removeItemAttribute(a)}
                     onDeleteEntirely={() => deleteAttributeEntirely(a.id, false)}
                   />
                 ))}
 
-                <NewAttributeForm onCreate={addItemAttribute} />
+                <NewAttributeForm allowExisting onSubmit={addItemAttribute} />
               </div>
             </div>
           )}

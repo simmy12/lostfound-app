@@ -71,7 +71,7 @@ router.get("/items/:itemId/attributes", asyncHandler(async (req, res) => {
   const itemId = parseId(req, res, "itemId");
   if (itemId == null) return;
   const r = await pool.query(
-    `SELECT a.id, a.name, a.input_type, ia.display_order, ia.weight, ia.required
+    `SELECT a.id, a.name, a.input_type, ia.display_order, ia.weight, ia.required, ia.allow_other
      FROM item_attributes ia JOIN attributes a ON a.id = ia.attribute_id
      WHERE ia.item_id = $1 ORDER BY ia.display_order`,
     [itemId]
@@ -79,7 +79,7 @@ router.get("/items/:itemId/attributes", asyncHandler(async (req, res) => {
   const attrs = r.rows;
   const values = await pool.query(
     `SELECT attribute_id, id, value FROM attribute_values
-     WHERE attribute_id = ANY($1::int[]) ORDER BY display_order`,
+     WHERE attribute_id = ANY($1::int[]) AND NOT hidden ORDER BY display_order`,
     [attrs.map((a) => a.id)]
   );
   res.json(
@@ -93,14 +93,14 @@ router.get("/items/:itemId/attributes", asyncHandler(async (req, res) => {
 // universal attributes shown on every report (location/date step)
 router.get("/universal-attributes", asyncHandler(async (req, res) => {
   const r = await pool.query(
-    `SELECT a.id, a.name, a.input_type, ua.display_order, ua.weight, ua.required
+    `SELECT a.id, a.name, a.input_type, ua.display_order, ua.weight, ua.required, ua.allow_other
      FROM universal_attributes ua JOIN attributes a ON a.id = ua.attribute_id
      ORDER BY ua.display_order`
   );
   const attrs = r.rows;
   const values = await pool.query(
     `SELECT attribute_id, id, value FROM attribute_values
-     WHERE attribute_id = ANY($1::int[]) ORDER BY display_order`,
+     WHERE attribute_id = ANY($1::int[]) AND NOT hidden ORDER BY display_order`,
     [attrs.map((a) => a.id)]
   );
   res.json(

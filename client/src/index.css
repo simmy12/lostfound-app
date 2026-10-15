@@ -90,6 +90,8 @@ textarea{resize:vertical;min-height:72px;line-height:1.5}
 .tag{display:inline-flex;align-items:center;gap:4px;padding:3px 9px;border-radius:999px;font-size:12px;background:var(--pr-l);color:#1e40af;border:1px solid var(--pr-b)}
 .tag x{cursor:pointer;font-style:normal;opacity:.5}
 .tag x:hover{opacity:1}
+.tag-x{all:unset;cursor:pointer;width:18px;height:18px;display:inline-flex;align-items:center;justify-content:center;border-radius:50%;font-size:11px;color:inherit;opacity:.7}
+.tag-x:hover{opacity:1;background:var(--da-l);color:var(--da)}
 
 .item-card{border:1px solid var(--border);border-radius:var(--r);padding:12px;margin-bottom:8px;cursor:pointer}
 .item-card:hover{border-color:var(--pr);box-shadow:0 2px 8px rgba(37,99,235,.1)}

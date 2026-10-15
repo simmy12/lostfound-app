@@ -28,7 +28,10 @@ export const api = {
   confirmMatch: (id, otherId) => req(`/reports/${id}/matches/${otherId}/confirm`, { method: "POST" }),
 
   adminListItems: () => req("/admin/items"),
-  adminGetItemAttributes: (itemId) => req(`/items/${itemId}/attributes`),
+  adminGetItemAttributes: (itemId) => req(`/admin/items/${itemId}/attributes`),
+  adminListAttributes: () => req("/admin/attributes"),
+  adminLinkAttribute: (attrId, itemIds) =>
+    req(`/admin/attributes/${attrId}/items`, { method: "POST", body: JSON.stringify({ item_ids: itemIds }) }),
   adminGetUniversalAttributes: () => req("/admin/universal-attributes"),
   adminSetItemAttrWeight: (itemId, attrId, weight) =>
     req(`/admin/item-attributes/${itemId}/${attrId}`, { method: "PUT", body: JSON.stringify({ weight }) }),
@@ -36,6 +39,10 @@ export const api = {
     req(`/admin/universal-attributes/${attrId}`, { method: "PUT", body: JSON.stringify({ weight }) }),
   adminSetItemAttrRequired: (itemId, attrId, required) =>
     req(`/admin/item-attributes/${itemId}/${attrId}`, { method: "PUT", body: JSON.stringify({ required }) }),
+  adminSetItemAttrAllowOther: (itemId, attrId, allow_other) =>
+    req(`/admin/item-attributes/${itemId}/${attrId}`, { method: "PUT", body: JSON.stringify({ allow_other }) }),
+  adminSetUniversalAllowOther: (attrId, allow_other) =>
+    req(`/admin/universal-attributes/${attrId}`, { method: "PUT", body: JSON.stringify({ allow_other }) }),
   adminSetUniversalRequired: (attrId, required) =>
     req(`/admin/universal-attributes/${attrId}`, { method: "PUT", body: JSON.stringify({ required }) }),
   adminAddValue: (attrId, value) =>

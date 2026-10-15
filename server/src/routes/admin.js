@@ -4,28 +4,30 @@ const asyncHandler = require("../lib/asyncHandler");
 
 const router = express.Router();
 
-// update weight and/or required flag of an item-specific attribute
+// update weight / required / allow_other ("אחר" offered) of an item-specific attribute
 router.put("/admin/item-attributes/:itemId/:attributeId", asyncHandler(async (req, res) => {
-  const { weight, required } = req.body;
+  const { weight, required, allow_other } = req.body;
   await pool.query(
     `UPDATE item_attributes SET
-       weight   = COALESCE($1, weight),
-       required = COALESCE($2, required)
-     WHERE item_id = $3 AND attribute_id = $4`,
-    [weight, required, req.params.itemId, req.params.attributeId]
+       weight      = COALESCE($1, weight),
+       required    = COALESCE($2, required),
+       allow_other = COALESCE($3, allow_other)
+     WHERE item_id = $4 AND attribute_id = $5`,
+    [weight, required, allow_other, req.params.itemId, req.params.attributeId]
   );
   res.json({ ok: true });
 }));
 
-// update weight and/or required flag of a universal attribute
+// update weight / required / allow_other of a universal attribute
 router.put("/admin/universal-attributes/:attributeId", asyncHandler(async (req, res) => {
-  const { weight, required } = req.body;
+  const { weight, required, allow_other } = req.body;
   await pool.query(
     `UPDATE universal_attributes SET
-       weight   = COALESCE($1, weight),
-       required = COALESCE($2, required)
-     WHERE attribute_id = $3`,
-    [weight, required, req.params.attributeId]
+       weight      = COALESCE($1, weight),
+       required    = COALESCE($2, required),
+       allow_other = COALESCE($3, allow_other)
+     WHERE attribute_id = $4`,
+    [weight, required, allow_other, req.params.attributeId]
   );
   res.json({ ok: true });
 }));
@@ -34,22 +36,53 @@ router.put("/admin/universal-attributes/:attributeId", asyncHandler(async (req, 
 router.put("/admin/attributes/:id/name", asyncHandler(async (req, res) => {
   const { name } = req.body;
   if (!name || !name.trim()) return res.status(400).json({ error: "name is required" });
-  try {
-    const r = await pool.query(`UPDATE attributes SET name = $1 WHERE id = $2 RETURNING id`, [name.trim(), req.params.id]);
-    if (!r.rows.length) return res.status(404).json({ error: "not found" });
-    res.json({ ok: true });
-  } catch (e) {
-    if (e.code === "23505") return res.status(400).json({ error: "שאלה בשם הזה כבר קיימת" });
-    throw e;
-  }
+  const r = await pool.query(`UPDATE attributes SET name = $1 WHERE id = $2 RETURNING id`, [name.trim(), req.params.id]);
+  if (!r.rows.length) return res.status(404).json({ error: "not found" });
+  res.json({ ok: true });
 }));
 
-// create a brand-new question (attribute), optionally with its value list, attached either to a
-// specific item or as a universal question asked on every report
+// links an existing question to items (skipping items that already ask it), appended last
+async function linkAttributeToItems(db, attributeId, itemIds) {
+  for (const itemId of itemIds) {
+    await db.query(
+      `INSERT INTO item_attributes (item_id, attribute_id, display_order)
+       VALUES ($1, $2, (SELECT COALESCE(MAX(display_order)+1,0) FROM item_attributes WHERE item_id = $1))
+       ON CONFLICT (item_id, attribute_id) DO NOTHING`,
+      [itemId, attributeId]
+    );
+  }
+}
+
+// every item-level question with the items sharing it — feeds "choose an existing question"
+router.get("/admin/attributes", asyncHandler(async (req, res) => {
+  const r = await pool.query(
+    `SELECT a.id, a.name, a.input_type,
+            COUNT(i.id)::int AS item_count,
+            COALESCE(array_agg(i.name ORDER BY i.name) FILTER (WHERE i.id IS NOT NULL), '{}') AS item_names
+     FROM attributes a
+     LEFT JOIN item_attributes ia ON ia.attribute_id = a.id
+     LEFT JOIN items i ON i.id = ia.item_id
+     WHERE a.scope = 'item'
+     GROUP BY a.id ORDER BY a.name, item_count DESC`
+  );
+  res.json(r.rows);
+}));
+
+// add an existing question to one or more items at once
+router.post("/admin/attributes/:id/items", asyncHandler(async (req, res) => {
+  const { item_ids } = req.body;
+  if (!Array.isArray(item_ids) || !item_ids.length) return res.status(400).json({ error: "item_ids is required" });
+  await linkAttributeToItems(pool, req.params.id, item_ids);
+  res.json({ ok: true });
+}));
+
+// create a brand-new question (attribute), optionally with its value list, attached either to one
+// or more items (item_id / item_ids) or as a universal question asked on every report
 router.post("/admin/attributes", asyncHandler(async (req, res) => {
   const { name, input_type = "single", values = [], item_id, universal } = req.body;
+  const itemIds = req.body.item_ids || (item_id ? [item_id] : []);
   if (!name) return res.status(400).json({ error: "name is required" });
-  if (!item_id && !universal) return res.status(400).json({ error: "item_id or universal is required" });
+  if (!itemIds.length && !universal) return res.status(400).json({ error: "item_id(s) or universal is required" });
 
   const client = await pool.connect();
   try {
@@ -72,11 +105,7 @@ router.post("/admin/attributes", asyncHandler(async (req, res) => {
         [attributeId]
       );
     } else {
-      await client.query(
-        `INSERT INTO item_attributes (item_id, attribute_id, display_order)
-         VALUES ($1, $2, (SELECT COALESCE(MAX(display_order)+1,0) FROM item_attributes WHERE item_id = $1))`,
-        [item_id, attributeId]
-      );
+      await linkAttributeToItems(client, attributeId, itemIds);
     }
     await client.query("COMMIT");
     res.status(201).json({ id: attributeId });
@@ -112,13 +141,20 @@ router.post("/admin/attributes/:attributeId/values", asyncHandler(async (req, re
   const r = await pool.query(
     `INSERT INTO attribute_values (attribute_id, value, display_order)
      VALUES ($1, $2, (SELECT COALESCE(MAX(display_order)+1,0) FROM attribute_values WHERE attribute_id = $1))
-     ON CONFLICT (attribute_id, value) DO NOTHING RETURNING id`,
+     ON CONFLICT (attribute_id, value) DO UPDATE SET hidden = false RETURNING id`,
     [req.params.attributeId, value]
   );
   res.status(201).json(r.rows[0] || {});
 }));
 
+// a value already picked in past reports can't be deleted (those answers point at it), so it's
+// hidden from new reports instead; an unused value is deleted outright
 router.delete("/admin/attribute-values/:id", asyncHandler(async (req, res) => {
+  const used = await pool.query(`SELECT 1 FROM report_attribute_values WHERE value_id = $1 LIMIT 1`, [req.params.id]);
+  if (used.rows.length) {
+    await pool.query(`UPDATE attribute_values SET hidden = true WHERE id = $1`, [req.params.id]);
+    return res.json({ ok: true, hidden: true });
+  }
   await pool.query(`DELETE FROM attribute_values WHERE id = $1`, [req.params.id]);
   res.json({ ok: true });
 }));
@@ -134,16 +170,41 @@ router.get("/admin/items", asyncHandler(async (req, res) => {
   res.json(r.rows);
 }));
 
+// one item's questions for the admin editor — like the public endpoint, plus allow_other and the
+// items sharing each question (editing a shared question's values affects all of them)
+router.get("/admin/items/:itemId/attributes", asyncHandler(async (req, res) => {
+  const r = await pool.query(
+    `SELECT a.id, a.name, a.input_type, ia.display_order, ia.weight, ia.required, ia.allow_other,
+            (SELECT array_agg(i.name ORDER BY i.name) FROM item_attributes x JOIN items i ON i.id = x.item_id
+             WHERE x.attribute_id = a.id) AS shared_items
+     FROM item_attributes ia JOIN attributes a ON a.id = ia.attribute_id
+     WHERE ia.item_id = $1 ORDER BY ia.display_order`,
+    [req.params.itemId]
+  );
+  const attrs = r.rows;
+  const values = await pool.query(
+    `SELECT attribute_id, id, value FROM attribute_values
+     WHERE attribute_id = ANY($1::int[]) AND NOT hidden ORDER BY display_order`,
+    [attrs.map((a) => a.id)]
+  );
+  res.json(
+    attrs.map((a) => ({
+      ...a,
+      values: values.rows.filter((v) => v.attribute_id === a.id).map((v) => ({ id: v.id, value: v.value })),
+    }))
+  );
+}));
+
 router.get("/admin/universal-attributes", asyncHandler(async (req, res) => {
   const r = await pool.query(
-    `SELECT a.id, a.name, a.input_type, ua.weight, ua.display_order, ua.required
+    `SELECT a.id, a.name, a.input_type, ua.weight, ua.display_order, ua.required, ua.allow_other
      FROM universal_attributes ua JOIN attributes a ON a.id = ua.attribute_id
      ORDER BY ua.display_order`
   );
   const attrs = r.rows;
   const values = await pool.query(
     `SELECT attribute_id, id, value FROM attribute_values
-     WHERE attribute_id = ANY($1::int[]) ORDER BY display_order`,
+     WHERE attribute_id = ANY($1::int[]) AND NOT hidden ORDER BY display_order`,
     [attrs.map((a) => a.id)]
   );
   res.json(
@@ -251,17 +312,10 @@ router.post("/admin/other-answers/promote", asyncHandler(async (req, res) => {
     let r = await client.query(
       `INSERT INTO attribute_values (attribute_id, value, display_order)
        VALUES ($1, $2, (SELECT COALESCE(MAX(display_order)+1,0) FROM attribute_values WHERE attribute_id = $1))
-       ON CONFLICT (attribute_id, value) DO NOTHING RETURNING id`,
+       ON CONFLICT (attribute_id, value) DO UPDATE SET hidden = false RETURNING id`,
       [attribute_id, text]
     );
-    let valueId = r.rows[0]?.id;
-    if (!valueId) {
-      const existing = await client.query(
-        `SELECT id FROM attribute_values WHERE attribute_id = $1 AND value = $2`,
-        [attribute_id, text]
-      );
-      valueId = existing.rows[0].id;
-    }
+    const valueId = r.rows[0].id;
 
     let updated = 0;
     if (retroactive) {

@@ -39,13 +39,15 @@ function AttributeField({ attr, value, onChange }) {
               {v.value}
             </button>
           ))}
-          <button
-            type="button"
-            className={"opt-btn" + (isOther ? " sel" : "")}
-            onClick={() => onChange({ attribute_id: attr.id, isOther: true, free_text: value?.free_text || "" })}
-          >
-            אחר
-          </button>
+          {attr.allow_other !== false && (
+            <button
+              type="button"
+              className={"opt-btn" + (isOther ? " sel" : "")}
+              onClick={() => onChange({ attribute_id: attr.id, isOther: true, free_text: value?.free_text || "" })}
+            >
+              אחר
+            </button>
+          )}
         </div>
         {isOther && (
           <input
@@ -83,14 +85,16 @@ function AttributeField({ attr, value, onChange }) {
               </button>
             );
           })}
-          <button
-            type="button"
-            disabled={!isOther && atCap}
-            className={"opt-btn" + (isOther ? " sel" : "")}
-            onClick={() => onChange({ attribute_id: attr.id, value_ids: selected, isOther: !isOther, free_text: value?.free_text })}
-          >
-            אחר
-          </button>
+          {attr.allow_other !== false && (
+            <button
+              type="button"
+              disabled={!isOther && atCap}
+              className={"opt-btn" + (isOther ? " sel" : "")}
+              onClick={() => onChange({ attribute_id: attr.id, value_ids: selected, isOther: !isOther, free_text: value?.free_text })}
+            >
+              אחר
+            </button>
+          )}
         </div>
         {isOther && (
           <input
