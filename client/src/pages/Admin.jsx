@@ -638,7 +638,13 @@ export default function Admin() {
 
   async function addValue(attrId, value, fromUniversal) {
     const r = await api.adminAddValue(attrId, value);
-    const patch = (a) => (a.id === attrId ? { ...a, values: [...a.values, { id: r.id, value }] } : a);
+    // keep "אחר..." values last, same as the server's ordering
+    const isOther = (v) => v.value.startsWith("אחר");
+    const patch = (a) => {
+      if (a.id !== attrId) return a;
+      const values = [...a.values.filter((v) => v.id !== r.id), { id: r.id, value }];
+      return { ...a, values: [...values.filter((v) => !isOther(v)), ...values.filter(isOther)] };
+    };
     if (fromUniversal) setUniversal((prev) => prev.map(patch));
     else setAttrs((prev) => prev.map(patch));
   }
@@ -753,9 +759,6 @@ export default function Admin() {
 
           <div className="admin-panel-h" style={{ borderTop: "1px solid var(--border)" }}>🗂️ פריטים ({items.length})</div>
           <div className="admin-section">
-            <div className="admin-search">
-              <input type="text" placeholder="חיפוש פריט..." value={search} onChange={(e) => setSearch(e.target.value)} />
-            </div>
             <button
               className="admin-add-btn"
               style={{ marginBottom: 8 }}
@@ -763,6 +766,9 @@ export default function Admin() {
             >
               ☑️ הוספת שאלה לכמה פריטים
             </button>
+            <div className="admin-search">
+              <input type="text" placeholder="חיפוש פריט..." value={search} onChange={(e) => setSearch(e.target.value)} />
+            </div>
             <div className="admin-tree">
               {Object.entries(grouped).map(([group, its]) => (
                 <div key={group}>

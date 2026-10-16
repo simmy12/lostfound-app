@@ -184,7 +184,7 @@ router.get("/admin/items/:itemId/attributes", asyncHandler(async (req, res) => {
   const attrs = r.rows;
   const values = await pool.query(
     `SELECT attribute_id, id, value FROM attribute_values
-     WHERE attribute_id = ANY($1::int[]) AND NOT hidden ORDER BY display_order`,
+     WHERE attribute_id = ANY($1::int[]) AND NOT hidden ORDER BY (value LIKE 'אחר%'), display_order`,
     [attrs.map((a) => a.id)]
   );
   res.json(
@@ -204,7 +204,7 @@ router.get("/admin/universal-attributes", asyncHandler(async (req, res) => {
   const attrs = r.rows;
   const values = await pool.query(
     `SELECT attribute_id, id, value FROM attribute_values
-     WHERE attribute_id = ANY($1::int[]) AND NOT hidden ORDER BY display_order`,
+     WHERE attribute_id = ANY($1::int[]) AND NOT hidden ORDER BY (value LIKE 'אחר%'), display_order`,
     [attrs.map((a) => a.id)]
   );
   res.json(
@@ -290,7 +290,7 @@ router.get("/admin/other-answers", asyncHandler(async (req, res) => {
   );
   const attrIds = [...new Set(r.rows.map((row) => row.attribute_id))];
   const values = await pool.query(
-    `SELECT attribute_id, id, value FROM attribute_values WHERE attribute_id = ANY($1::int[]) ORDER BY display_order`,
+    `SELECT attribute_id, id, value FROM attribute_values WHERE attribute_id = ANY($1::int[]) ORDER BY (value LIKE 'אחר%'), display_order`,
     [attrIds]
   );
   res.json(

@@ -79,7 +79,7 @@ router.get("/items/:itemId/attributes", asyncHandler(async (req, res) => {
   const attrs = r.rows;
   const values = await pool.query(
     `SELECT attribute_id, id, value FROM attribute_values
-     WHERE attribute_id = ANY($1::int[]) AND NOT hidden ORDER BY display_order`,
+     WHERE attribute_id = ANY($1::int[]) AND NOT hidden ORDER BY (value LIKE 'אחר%'), display_order`,
     [attrs.map((a) => a.id)]
   );
   res.json(
@@ -100,7 +100,7 @@ router.get("/universal-attributes", asyncHandler(async (req, res) => {
   const attrs = r.rows;
   const values = await pool.query(
     `SELECT attribute_id, id, value FROM attribute_values
-     WHERE attribute_id = ANY($1::int[]) AND NOT hidden ORDER BY display_order`,
+     WHERE attribute_id = ANY($1::int[]) AND NOT hidden ORDER BY (value LIKE 'אחר%'), display_order`,
     [attrs.map((a) => a.id)]
   );
   res.json(
