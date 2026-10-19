@@ -396,36 +396,53 @@ function QuestionCard({ attr, onRename, onSetWeight, onSetRequired, onSetAllowOt
   const isChoice = attr.input_type === "single" || attr.input_type === "multi";
   const shared = attr.shared_items || [];
 
-  // drag-to-reorder answer tags: the list is reordered live while dragging and saved on drop.
-  // "אחר..." values stay pinned last (the server always sorts them last too).
+  // drag-to-reorder answer tags with pointer events (mouse and touch alike): the list is reordered
+  // live as the pointer passes over other tags, and saved on release. "אחר..." values stay pinned
+  // last (the server always sorts them last too).
   const [dragList, setDragList] = useState(null);
   const dragId = useRef(null);
   const isOtherValue = (v) => v.value.startsWith("אחר");
   const shownValues = dragList || attr.values;
 
-  function dragStart(e, v) {
-    dragId.current = v.id;
-    setDragList(attr.values);
-    e.dataTransfer.effectAllowed = "move";
-  }
-
-  function dragOver(e, v) {
+  function startDrag(e, v) {
+    if (isOtherValue(v) || e.button > 0 || e.target.closest(".tag-x")) return;
     e.preventDefault();
-    if (dragId.current == null || v.id === dragId.current || isOtherValue(v)) return;
-    setDragList((list) => {
-      const from = list.findIndex((x) => x.id === dragId.current);
-      const to = list.findIndex((x) => x.id === v.id);
+    const original = attr.values;
+    let list = original;
+    let lastSwap = null; // the tag we just swapped with — ignored until the pointer leaves it, so tags of different widths don't flip back and forth
+    dragId.current = v.id;
+    setDragList(list);
+
+    const move = (ev) => {
+      const overId = Number(document.elementFromPoint(ev.clientX, ev.clientY)?.closest("[data-vid]")?.dataset.vid);
+      if (!overId || overId === v.id) return;
+      if (overId === lastSwap) return;
+      const from = list.findIndex((x) => x.id === v.id);
+      const to = list.findIndex((x) => x.id === overId);
+      if (to < 0 || isOtherValue(list[to])) return;
       const next = [...list];
       next.splice(to, 0, next.splice(from, 1)[0]);
-      return next;
-    });
-  }
-
-  function dragEnd() {
-    const list = dragList;
-    dragId.current = null;
-    setDragList(null);
-    if (list && list.some((v, i) => v.id !== attr.values[i]?.id)) onReorderValues(list);
+      list = next;
+      lastSwap = overId;
+      setDragList(next);
+    };
+    const leave = (ev) => {
+      const overId = Number(document.elementFromPoint(ev.clientX, ev.clientY)?.closest("[data-vid]")?.dataset.vid);
+      if (overId !== lastSwap) lastSwap = null;
+    };
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointermove", leave);
+      window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", up);
+      dragId.current = null;
+      setDragList(null);
+      if (list.some((x, i) => x.id !== original[i]?.id)) onReorderValues(list);
+    };
+    window.addEventListener("pointermove", leave);
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", up);
   }
 
   return (
@@ -497,11 +514,8 @@ function QuestionCard({ attr, onRename, onSetWeight, onSetRequired, onSetAllowOt
               <span
                 className={"tag" + (isOtherValue(v) ? "" : " tag-drag") + (dragList && dragId.current === v.id ? " dragging" : "")}
                 key={v.id}
-                draggable={!isOtherValue(v)}
-                onDragStart={(e) => dragStart(e, v)}
-                onDragOver={(e) => dragOver(e, v)}
-                onDrop={(e) => e.preventDefault()}
-                onDragEnd={dragEnd}
+                data-vid={v.id}
+                onPointerDown={(e) => startDrag(e, v)}
               >
                 {v.value}
                 <button type="button" className="tag-x" title="הסר תשובה זו" onClick={() => onDeleteValue(v)}>✕</button>
