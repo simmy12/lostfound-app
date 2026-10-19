@@ -147,6 +147,20 @@ router.post("/admin/attributes/:attributeId/values", asyncHandler(async (req, re
   res.status(201).json(r.rows[0] || {});
 }));
 
+// set the display order of an attribute's values (admin drags the answer tags) — value_ids in the
+// new order; values not listed (e.g. hidden ones) keep their old position number
+router.put("/admin/attributes/:attributeId/values/order", asyncHandler(async (req, res) => {
+  const { value_ids } = req.body;
+  if (!Array.isArray(value_ids)) return res.status(400).json({ error: "value_ids is required" });
+  await pool.query(
+    `UPDATE attribute_values v SET display_order = o.pos
+     FROM unnest($1::int[]) WITH ORDINALITY AS o(id, pos)
+     WHERE v.id = o.id AND v.attribute_id = $2`,
+    [value_ids, req.params.attributeId]
+  );
+  res.json({ ok: true });
+}));
+
 // a value already picked in past reports can't be deleted (those answers point at it), so it's
 // hidden from new reports instead; an unused value is deleted outright
 router.delete("/admin/attribute-values/:id", asyncHandler(async (req, res) => {

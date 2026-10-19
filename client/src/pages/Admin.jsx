@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api } from "../api";
 
 const INPUT_TYPE_LABEL = { single: "בחירה אחת", multi: "בחירה מרובה", text: "טקסט חופשי", number: "מספר" };
@@ -360,7 +360,7 @@ function NewAttributeForm({ onSubmit, allowExisting, alwaysOpen, submitLabel = "
 // One question's full editor card: rename, required toggle, weight, and — for choice-type
 // questions — its answer options. Shared by item-specific and universal (base) questions, so
 // both get exactly the same editing power.
-function QuestionCard({ attr, onRename, onSetWeight, onSetRequired, onSetAllowOther, onAddValue, onDeleteValue, onRemoveFromItem, onDeleteEntirely }) {
+function QuestionCard({ attr, onRename, onSetWeight, onSetRequired, onSetAllowOther, onAddValue, onDeleteValue, onReorderValues, onRemoveFromItem, onDeleteEntirely }) {
   const [name, setName] = useState(attr.name);
   const [newValue, setNewValue] = useState("");
   const [nameStatus, setNameStatus] = useState(null); // null | "saving" | "saved" | error text
@@ -395,6 +395,38 @@ function QuestionCard({ attr, onRename, onSetWeight, onSetRequired, onSetAllowOt
 
   const isChoice = attr.input_type === "single" || attr.input_type === "multi";
   const shared = attr.shared_items || [];
+
+  // drag-to-reorder answer tags: the list is reordered live while dragging and saved on drop.
+  // "אחר..." values stay pinned last (the server always sorts them last too).
+  const [dragList, setDragList] = useState(null);
+  const dragId = useRef(null);
+  const isOtherValue = (v) => v.value.startsWith("אחר");
+  const shownValues = dragList || attr.values;
+
+  function dragStart(e, v) {
+    dragId.current = v.id;
+    setDragList(attr.values);
+    e.dataTransfer.effectAllowed = "move";
+  }
+
+  function dragOver(e, v) {
+    e.preventDefault();
+    if (dragId.current == null || v.id === dragId.current || isOtherValue(v)) return;
+    setDragList((list) => {
+      const from = list.findIndex((x) => x.id === dragId.current);
+      const to = list.findIndex((x) => x.id === v.id);
+      const next = [...list];
+      next.splice(to, 0, next.splice(from, 1)[0]);
+      return next;
+    });
+  }
+
+  function dragEnd() {
+    const list = dragList;
+    dragId.current = null;
+    setDragList(null);
+    if (list && list.some((v, i) => v.id !== attr.values[i]?.id)) onReorderValues(list);
+  }
 
   return (
     <div className="q-card">
@@ -461,14 +493,27 @@ function QuestionCard({ attr, onRename, onSetWeight, onSetRequired, onSetAllowOt
       {isChoice && (
         <div className="q-card-body">
           <div className="chip-row">
-            {attr.values.map((v) => (
-              <span className="tag" key={v.id}>
+            {shownValues.map((v) => (
+              <span
+                className={"tag" + (isOtherValue(v) ? "" : " tag-drag") + (dragList && dragId.current === v.id ? " dragging" : "")}
+                key={v.id}
+                draggable={!isOtherValue(v)}
+                onDragStart={(e) => dragStart(e, v)}
+                onDragOver={(e) => dragOver(e, v)}
+                onDrop={(e) => e.preventDefault()}
+                onDragEnd={dragEnd}
+              >
                 {v.value}
                 <button type="button" className="tag-x" title="הסר תשובה זו" onClick={() => onDeleteValue(v)}>✕</button>
               </span>
             ))}
             {!attr.values.length && <span className="muted">אין ערכים מוגדרים עדיין</span>}
           </div>
+          {attr.values.length > 1 && (
+            <p className="muted" style={{ fontSize: 12, margin: "6px 0 0" }}>
+              ניתן לגרור תשובה כדי לשנות את הסדר. התשובה הימנית ביותר תוצג ראשונה.
+            </p>
+          )}
           <div className="chip-add-row">
             <input
               type="text"
@@ -659,6 +704,17 @@ export default function Admin() {
     setUniversal((prev) => prev.map((a) => (a.id === attrId ? { ...a, allow_other } : a)));
   }
 
+  async function reorderValues(attrId, values, fromUniversal) {
+    const patch = (a) => (a.id === attrId ? { ...a, values } : a);
+    if (fromUniversal) setUniversal((prev) => prev.map(patch));
+    else setAttrs((prev) => prev.map(patch));
+    try {
+      await api.adminReorderValues(attrId, values.map((v) => v.id));
+    } catch {
+      window.alert("שמירת הסדר נכשלה, נסו שוב.");
+    }
+  }
+
   // a value used by past reports is hidden (not deleted) server-side — either way it leaves the list
   async function deleteValue(attr, value, fromUniversal) {
     const sharedNote = attr.shared_items?.length > 1 ? `\nהרשימה משותפת ל-${attr.shared_items.length} פריטים — התשובה תוסר מכולם.` : "";
@@ -835,6 +891,7 @@ export default function Admin() {
                   onSetAllowOther={(on) => setUniversalAllowOther(selectedUniversal.id, on)}
                   onAddValue={(v) => addValue(selectedUniversal.id, v, true)}
                   onDeleteValue={(v) => deleteValue(selectedUniversal, v, true)}
+                  onReorderValues={(values) => reorderValues(selectedUniversal.id, values, true)}
                   onDeleteEntirely={() => deleteAttributeEntirely(selectedUniversal.id, true)}
                 />
               </div>
@@ -881,6 +938,7 @@ export default function Admin() {
                     onSetAllowOther={(on) => setAllowOther(a.id, on)}
                     onAddValue={(v) => addValue(a.id, v, false)}
                     onDeleteValue={(v) => deleteValue(a, v, false)}
+                    onReorderValues={(values) => reorderValues(a.id, values, false)}
                     onRemoveFromItem={() => removeItemAttribute(a)}
                     onDeleteEntirely={() => deleteAttributeEntirely(a.id, false)}
                   />
