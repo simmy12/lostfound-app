@@ -5,6 +5,9 @@ import { ISRAELI_CITIES } from "../cities";
 
 const STEPS = ["פריט", "פרטים", "מיקום ותאריך", "סיכום"];
 const MAX_LINKED = 4;
+// "what was inside it?" — once the reporter answers yes, at least MIN_CONTENTS items are required
+const MAX_CONTENTS = 5;
+const MIN_CONTENTS = 2;
 const MULTI_SELECT_CAP = 2;
 
 function attrLabel(attr) {
@@ -426,14 +429,17 @@ function SubReportPicker({ categories, label, onChange, onRemove, containerMode,
   );
 }
 
-function LinkedItemsList({ title, prompt, hint, items, setItems, categories, containerMode, allowNestedContents, originalItemName, maxItems = MAX_LINKED, startNumber = 1 }) {
+function LinkedItemsList({ title, prompt, hint, items, setItems, categories, containerMode, allowNestedContents, originalItemName, maxItems = MAX_LINKED, minItems = 0, startNumber = 1 }) {
   const [asking, setAsking] = useState(items.length > 0 ? true : null);
 
-  // when only one item will ever be added (e.g. the container), skip the extra "+ add" click —
-  // go straight to the picker as soon as the reporter answers "yes"
+  // on "yes", open the pickers straight away — one for a single-item list (e.g. the container),
+  // or as many as the list requires (minItems), so there's no extra "+ add" click
   function answerYes() {
     setAsking(true);
-    if (maxItems === 1 && items.length === 0) setItems([{ key: Date.now() + Math.random(), value: null }]);
+    const open = Math.max(minItems, maxItems === 1 ? 1 : 0);
+    if (items.length < open) {
+      setItems((prev) => [...prev, ...Array.from({ length: open - prev.length }, () => ({ key: Date.now() + Math.random(), value: null }))]);
+    }
   }
 
   return (
@@ -466,7 +472,7 @@ function LinkedItemsList({ title, prompt, hint, items, setItems, categories, con
               allowNestedContents={allowNestedContents}
               originalItemName={originalItemName}
               onChange={(val) => setItems((prev) => prev.map((x, idx) => (idx === i ? { ...x, value: val } : x)))}
-              onRemove={maxItems === 1 ? undefined : () => setItems((prev) => prev.filter((_, idx) => idx !== i))}
+              onRemove={maxItems === 1 || items.length <= minItems ? undefined : () => setItems((prev) => prev.filter((_, idx) => idx !== i))}
             />
           ))}
           {items.length < maxItems && (
@@ -523,9 +529,12 @@ export default function CitizenWizard() {
   const setAnswer = (a) => setAnswers((prev) => ({ ...prev, [a.attribute_id]: a }));
   const itemName = item?.name || "הפריט";
 
+  // answered "yes" to "what was inside?" (so pickers are open) but fewer than MIN_CONTENTS items chosen
+  const contentsTooFew = contents.length > 0 && contents.filter((c) => c.value).length < MIN_CONTENTS;
   // blocks "המשך": an "אחר" picked but not typed in, or an admin-marked-required question left unanswered
   const step1Incomplete =
     itemAttrs.some((a) => isOtherIncomplete(answers[a.id]) || (a.required && !isAnswered(a, answers[a.id]))) ||
+    contentsTooFew ||
     contents.some((c) => c.value?.incomplete) ||
     containerItems.some((c) => c.value?.incomplete) ||
     nearbyItems.some((n) => n.value?.incomplete);
@@ -632,8 +641,10 @@ export default function CitizenWizard() {
             {itemMeta?.can_contain_items && (
               <LinkedItemsList
                 title="פריט"
-                prompt={`האם ה${itemName} הכיל/ה דברים בתוכו?`}
-                hint="ניתן להוסיף עד 4 פריטים הכי חשובים שהיו בפנים."
+                prompt={`האם היו דברים בתוך ה${itemName}?`}
+                hint={`יש להזין לפחות ${MIN_CONTENTS} פריטים (ניתן עד ${MAX_CONTENTS})`}
+                maxItems={MAX_CONTENTS}
+                minItems={MIN_CONTENTS}
                 items={contents}
                 setItems={setContents}
                 categories={categories}
@@ -675,7 +686,8 @@ export default function CitizenWizard() {
               <label>הערה</label>
               <textarea value={note} onChange={(e) => setNote(e.target.value)} placeholder="הערה נוספת..." />
             </div>
-            {step1Incomplete && <p className="muted" style={{ color: "#b91c1c" }}>יש להשלים טקסט עבור כל שדה שסומן "אחר", ולענות על כל שדה המסומן בכוכבית (*).</p>}
+            {contentsTooFew && <p className="muted" style={{ color: "#b91c1c" }}>יש להזין לפחות {MIN_CONTENTS} פריטים שהיו בתוך ה{itemName}.</p>}
+            {step1Incomplete && !contentsTooFew && <p className="muted" style={{ color: "#b91c1c" }}>יש להשלים טקסט עבור כל שדה שסומן "אחר", ולענות על כל שדה המסומן בכוכבית (*).</p>}
             <div className="form-actions">
               <button className="btn" onClick={() => setStep(0)}>→ חזרה</button>
               <button className="btn btn-pr btn-lg" disabled={step1Incomplete} onClick={() => setStep(2)}>המשך ←</button>

@@ -5,6 +5,7 @@ const asyncHandler = require("../lib/asyncHandler");
 const router = express.Router();
 
 const MAX_LINKED = 4;
+const MAX_CONTENTS = 5; // "what was inside it?" allows one more than the other linked lists
 
 function parseId(req, res, name = "id") {
   const id = Number(req.params[name]);
@@ -80,7 +81,7 @@ router.post("/reports", asyncHandler(async (req, res) => {
 
     const mainReportId = await insertReport(item_id, item_answers, other_item_text);
 
-    for (const c of contents.slice(0, MAX_LINKED)) {
+    for (const c of contents.slice(0, MAX_CONTENTS)) {
       const contentReportId = await insertReport(c.item_id, c.item_answers || []);
       await client.query(
         `INSERT INTO report_container_links (container_report_id, content_report_id) VALUES ($1,$2)`,

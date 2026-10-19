@@ -857,7 +857,7 @@ export default function Admin() {
                   <div className="flag-grid">
                     <label className="flag-chip">
                       <input type="checkbox" checked={!!selectedItem.can_contain_items} onChange={(e) => setFlag("can_contain_items", e.target.checked)} />
-                      "מה היה בפנים?" (עד 4 פריטים)
+                      "האם היו דברים בתוך הפריט?" (2–5 פריטים)
                     </label>
                     <label className="flag-chip">
                       <input type="checkbox" checked={!!selectedItem.can_be_contained} onChange={(e) => setFlag("can_be_contained", e.target.checked)} />
