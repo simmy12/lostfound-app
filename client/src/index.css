@@ -196,3 +196,9 @@ textarea{resize:vertical;min-height:72px;line-height:1.5}
 .chip-row{display:flex;flex-wrap:wrap;gap:7px;margin-bottom:9px}
 .chip-add-row{display:flex;gap:7px}
 .chip-add-row input{flex:1}
+
+/* wizard validation: shown after pressing "המשך" with missing fields */
+.input-err{border-color:var(--da)!important;box-shadow:0 0 0 3px var(--da-l)!important}
+.q-block.q-err{border:2px solid var(--da);border-radius:var(--r);padding:10px;background:var(--da-l)}
+.q-err-msg{color:var(--da);font-size:12px;font-weight:600;margin-top:6px}
+.err-text{color:var(--da);font-size:13px;font-weight:600}

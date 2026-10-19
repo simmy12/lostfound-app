@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { createContext, useContext, useEffect, useState } from "react";
 import { api } from "../api";
 import { formatAnswerValue } from "../format";
 import { ISRAELI_CITIES } from "../cities";
@@ -9,6 +9,10 @@ const MAX_LINKED = 4;
 const MAX_CONTENTS = 5;
 const MIN_CONTENTS = 2;
 const MULTI_SELECT_CAP = 2;
+
+// true once the reporter pressed "המשך" on a step that still has missing fields — from then on
+// every unfilled "אחר" text box and unanswered required question on that step gets a red frame
+const ShowErrors = createContext(false);
 
 function attrLabel(attr) {
   if (attr.name === "צבע") return "צבע עיקרי (עד 2 צבעים לבחירה)";
@@ -27,6 +31,8 @@ function isYesNo(attr) {
 //   strict yes/no:    { attribute_id, value_id? , isOther?, free_text? }
 //   text/number/date: { attribute_id, free_text }
 function AttributeField({ attr, value, onChange }) {
+  const showErrors = useContext(ShowErrors);
+  const otherCls = showErrors && !(value?.free_text || "").trim() ? "input-err" : undefined;
   if (attr.values?.length && isYesNo(attr)) {
     const isOther = !!value?.isOther;
     return (
@@ -55,7 +61,8 @@ function AttributeField({ attr, value, onChange }) {
         {isOther && (
           <input
             type="text"
-            placeholder="פרט/י..."
+            className={otherCls}
+            placeholder="לפרט..."
             value={value?.free_text || ""}
             onChange={(e) => onChange({ attribute_id: attr.id, isOther: true, free_text: e.target.value })}
           />
@@ -102,7 +109,8 @@ function AttributeField({ attr, value, onChange }) {
         {isOther && (
           <input
             type="text"
-            placeholder="פרט/י..."
+            className={otherCls}
+            placeholder="לפרט..."
             value={value?.free_text || ""}
             onChange={(e) => onChange({ attribute_id: attr.id, value_ids: selected, isOther: true, free_text: e.target.value })}
           />
@@ -183,6 +191,18 @@ function isAnswered(attr, value) {
     return !!value.isOther && !!(value.free_text || "").trim();
   }
   return !!(value.free_text || "").trim();
+}
+
+// a question block; framed red when the step was submitted while this required question is unanswered
+function QuestionBlock({ attr, answered, children }) {
+  const showErrors = useContext(ShowErrors);
+  const missing = showErrors && attr.required && !answered;
+  return (
+    <div className={"q-block" + (missing ? " q-err" : "")}>
+      {children}
+      {missing && <div className="q-err-msg">שדה חובה</div>}
+    </div>
+  );
 }
 
 // Lets the reporter find an item either by browsing category -> sub-category -> item, or by
@@ -501,10 +521,10 @@ export default function CitizenWizard() {
   const [universalAttrs, setUniversalAttrs] = useState([]);
   const [answers, setAnswers] = useState({}); // attribute_id -> value (item + universal together)
   const [otherItemText, setOtherItemText] = useState(""); // mandatory when itemMeta.is_other_placeholder
-  const [freeText, setFreeText] = useState(""); // "תיאור נוסף"
-  const [note, setNote] = useState(""); // "הערה"
+  const [freeText, setFreeText] = useState(""); // "תיאור נוסף/הערה" — one combined field
   const [contact, setContact] = useState({ contact_name: "", contact_phone: "", contact_email: "" });
   const [submitted, setSubmitted] = useState(null);
+  const [showErrors, setShowErrors] = useState(false);
 
   const [contents, setContents] = useState([]); // "what was inside" — SubReportPicker entries
   const [containerItems, setContainerItems] = useState([]); // "was it inside something" — max 1
@@ -540,6 +560,18 @@ export default function CitizenWizard() {
     nearbyItems.some((n) => n.value?.incomplete);
   const step2Incomplete = universalAttrs.some((a) => isOtherIncomplete(answers[a.id]) || (a.required && !isAnswered(a, answers[a.id])));
 
+  function goTo(next) {
+    setShowErrors(false);
+    setStep(next);
+  }
+
+  // advance only when the current step is complete; otherwise frame the missing fields in red
+  function tryNext(incomplete, next) {
+    if (!incomplete) return goTo(next);
+    setShowErrors(true);
+    setTimeout(() => document.querySelector(".q-err, .input-err, .err-text")?.scrollIntoView({ behavior: "smooth", block: "center" }), 0);
+  }
+
   async function submit() {
     const itemAttrIds = new Set(itemAttrs.map((a) => a.id));
     const universalAttrIds = new Set(universalAttrs.map((a) => a.id));
@@ -549,7 +581,6 @@ export default function CitizenWizard() {
       type,
       item_id: item.id,
       free_text: freeText,
-      note,
       other_item_text: itemMeta?.is_other_placeholder ? otherItemText.trim() : null,
       ...contact,
       item_answers: flattenAnswers(pick(itemAttrIds)),
@@ -577,6 +608,7 @@ export default function CitizenWizard() {
   }
 
   return (
+    <ShowErrors.Provider value={showErrors}>
     <div className="page page-center">
       <datalist id="cities-datalist">
         {ISRAELI_CITIES.map((c) => <option key={c} value={c} />)}
@@ -610,7 +642,13 @@ export default function CitizenWizard() {
             {itemMeta?.is_other_placeholder && (
               <div className="q-block">
                 <label>מה בעצם {type === "lost" ? "איבדת" : "מצאת"}? (שדה חובה)</label>
-                <input type="text" value={otherItemText} onChange={(e) => setOtherItemText(e.target.value)} placeholder="פרט/י מה הפריט..." />
+                <input
+                  type="text"
+                  className={showErrors && !otherItemText.trim() ? "input-err" : undefined}
+                  value={otherItemText}
+                  onChange={(e) => setOtherItemText(e.target.value)}
+                  placeholder="לפרט מה הפריט..."
+                />
               </div>
             )}
 
@@ -618,8 +656,8 @@ export default function CitizenWizard() {
               <span />
               <button
                 className="btn btn-pr btn-lg"
-                disabled={!item || (itemMeta?.is_other_placeholder && !otherItemText.trim())}
-                onClick={() => setStep(1)}
+                disabled={!item}
+                onClick={() => tryNext(itemMeta?.is_other_placeholder && !otherItemText.trim(), 1)}
               >
                 המשך ←
               </button>
@@ -632,10 +670,10 @@ export default function CitizenWizard() {
           <div className="card-b">
             {itemAttrs.length === 0 && <p className="muted">לפריט זה אין שאלות נוספות.</p>}
             {itemAttrs.map((attr, i) => (
-              <div className="q-block" key={attr.id}>
+              <QuestionBlock key={attr.id} attr={attr} answered={isAnswered(attr, answers[attr.id])}>
                 <div className="q-label"><span className="q-num">{i + 1}</span>{attrLabel(attr)}{attr.required && <span style={{ color: "#b91c1c" }}> *</span>}</div>
                 <AttributeField attr={attr} value={answers[attr.id]} onChange={setAnswer} />
-              </div>
+              </QuestionBlock>
             ))}
 
             {itemMeta?.can_contain_items && (
@@ -679,18 +717,13 @@ export default function CitizenWizard() {
             )}
 
             <div className="q-block">
-              <label>תיאור נוסף</label>
+              <label>תיאור נוסף/הערה</label>
               <textarea value={freeText} onChange={(e) => setFreeText(e.target.value)} placeholder="פרטים נוספים שיכולים לעזור לזהות את הפריט..." />
             </div>
-            <div className="q-block">
-              <label>הערה</label>
-              <textarea value={note} onChange={(e) => setNote(e.target.value)} placeholder="הערה נוספת..." />
-            </div>
-            {contentsTooFew && <p className="muted" style={{ color: "#b91c1c" }}>יש להזין לפחות {MIN_CONTENTS} פריטים שהיו בתוך ה{itemName}.</p>}
-            {step1Incomplete && !contentsTooFew && <p className="muted" style={{ color: "#b91c1c" }}>יש להשלים טקסט עבור כל שדה שסומן "אחר", ולענות על כל שדה המסומן בכוכבית (*).</p>}
+            {showErrors && contentsTooFew && <p className="err-text">יש להזין לפחות {MIN_CONTENTS} פריטים שהיו בתוך ה{itemName}.</p>}
             <div className="form-actions">
-              <button className="btn" onClick={() => setStep(0)}>→ חזרה</button>
-              <button className="btn btn-pr btn-lg" disabled={step1Incomplete} onClick={() => setStep(2)}>המשך ←</button>
+              <button className="btn" onClick={() => goTo(0)}>→ חזרה</button>
+              <button className="btn btn-pr btn-lg" onClick={() => tryNext(step1Incomplete, 2)}>המשך ←</button>
             </div>
           </div>
       </div>
@@ -699,15 +732,14 @@ export default function CitizenWizard() {
           <div className="card-h">מיקום ותאריך</div>
           <div className="card-b">
             {universalAttrs.map((attr, i) => (
-              <div className="q-block" key={attr.id}>
+              <QuestionBlock key={attr.id} attr={attr} answered={isAnswered(attr, answers[attr.id])}>
                 <div className="q-label"><span className="q-num">{i + 1}</span>{attr.name}{attr.required && <span style={{ color: "#b91c1c" }}> *</span>}</div>
                 <AttributeField attr={attr} value={answers[attr.id]} onChange={setAnswer} />
-              </div>
+              </QuestionBlock>
             ))}
-            {step2Incomplete && <p className="muted" style={{ color: "#b91c1c" }}>יש להשלים טקסט עבור כל שדה שסומן "אחר", ולענות על כל שדה המסומן בכוכבית (*).</p>}
             <div className="form-actions">
-              <button className="btn" onClick={() => setStep(1)}>→ חזרה</button>
-              <button className="btn btn-pr btn-lg" disabled={step2Incomplete} onClick={() => setStep(3)}>המשך ←</button>
+              <button className="btn" onClick={() => goTo(1)}>→ חזרה</button>
+              <button className="btn btn-pr btn-lg" onClick={() => tryNext(step2Incomplete, 3)}>המשך ←</button>
             </div>
           </div>
       </div>
@@ -735,8 +767,7 @@ export default function CitizenWizard() {
                   <span>{attr.values?.find((v) => v.id === answers[attr.id].value_id)?.value || formatAnswerValue(attr.name, answers[attr.id].free_text)}</span>
                 </div>
               ))}
-              {freeText && <div className="sum-row"><span className="sum-k">תיאור נוסף</span><span>{freeText}</span></div>}
-              {note && <div className="sum-row"><span className="sum-k">הערה</span><span>{note}</span></div>}
+              {freeText && <div className="sum-row"><span className="sum-k">תיאור נוסף/הערה</span><span>{freeText}</span></div>}
               {contents.filter((c) => c.value).length > 0 && (
                 <div className="sum-row"><span className="sum-k">תכולה שדווחה בנפרד</span><span>{contents.length} פריטים</span></div>
               )}
@@ -773,5 +804,6 @@ export default function CitizenWizard() {
           </div>
       </div>
     </div>
+    </ShowErrors.Provider>
   );
 }
