@@ -41,97 +41,149 @@ router.put("/admin/attributes/:id/name", asyncHandler(async (req, res) => {
   res.json({ ok: true });
 }));
 
-// links an existing question to items (skipping items that already ask it), appended last
-async function linkAttributeToItems(db, attributeId, itemIds) {
-  for (const itemId of itemIds) {
-    await db.query(
-      `INSERT INTO item_attributes (item_id, attribute_id, display_order)
-       VALUES ($1, $2, (SELECT COALESCE(MAX(display_order)+1,0) FROM item_attributes WHERE item_id = $1))
-       ON CONFLICT (item_id, attribute_id) DO NOTHING`,
-      [itemId, attributeId]
-    );
+// Every item has its own, independent copy of each question it asks — editing "חברה" on one item
+// never touches "חברה" on another. These helpers create/copy a question and attach it to one item.
+
+async function createAttribute(db, { name, input_type, scope, values }) {
+  const r = await db.query(`INSERT INTO attributes (name, input_type, scope) VALUES ($1, $2, $3) RETURNING id`, [name, input_type, scope]);
+  const id = r.rows[0].id;
+  for (let i = 0; i < values.length; i++) {
+    await db.query(`INSERT INTO attribute_values (attribute_id, value, display_order) VALUES ($1,$2,$3)`, [id, values[i], i]);
+  }
+  return id;
+}
+
+// attach a question to an item, appended after the item's existing questions
+async function linkToItem(db, attributeId, itemId) {
+  await db.query(
+    `INSERT INTO item_attributes (item_id, attribute_id, display_order)
+     VALUES ($1, $2, (SELECT COALESCE(MAX(display_order)+1,0) FROM item_attributes WHERE item_id = $1))`,
+    [itemId, attributeId]
+  );
+}
+
+// a fresh copy of an existing question (name, type, visible values in their order)
+async function copyAttribute(db, sourceId) {
+  const a = await db.query(`SELECT name, input_type FROM attributes WHERE id = $1`, [sourceId]);
+  if (!a.rows.length) return null;
+  const v = await db.query(
+    `SELECT value FROM attribute_values WHERE attribute_id = $1 AND NOT hidden ORDER BY display_order`,
+    [sourceId]
+  );
+  return createAttribute(db, { ...a.rows[0], scope: "item", values: v.rows.map((r) => r.value) });
+}
+
+// runs fn inside a transaction on a dedicated client
+async function inTransaction(fn) {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const out = await fn(client);
+    await client.query("COMMIT");
+    return out;
+  } catch (e) {
+    await client.query("ROLLBACK");
+    throw e;
+  } finally {
+    client.release();
   }
 }
 
-// every item-level question with the items sharing it — feeds "choose an existing question"
+// every question (item and base) with the item asking it — feeds "copy an existing question" and
+// "copy answers from another list"
 router.get("/admin/attributes", asyncHandler(async (req, res) => {
   const r = await pool.query(
-    `SELECT a.id, a.name, a.input_type,
-            COUNT(i.id)::int AS item_count,
+    `SELECT a.id, a.name, a.input_type, a.scope,
             COALESCE(array_agg(i.name ORDER BY i.name) FILTER (WHERE i.id IS NOT NULL), '{}') AS item_names
      FROM attributes a
      LEFT JOIN item_attributes ia ON ia.attribute_id = a.id
      LEFT JOIN items i ON i.id = ia.item_id
-     WHERE a.scope = 'item'
-     GROUP BY a.id ORDER BY a.name, item_count DESC`
+     LEFT JOIN universal_attributes ua ON ua.attribute_id = a.id
+     WHERE ia.item_id IS NOT NULL OR ua.attribute_id IS NOT NULL
+     GROUP BY a.id ORDER BY a.scope DESC, a.name, MIN(i.name)`
   );
   res.json(r.rows);
 }));
 
-// add an existing question to one or more items at once
+// give one or more items their own copy of an existing question (with its answer list)
 router.post("/admin/attributes/:id/items", asyncHandler(async (req, res) => {
   const { item_ids } = req.body;
   if (!Array.isArray(item_ids) || !item_ids.length) return res.status(400).json({ error: "item_ids is required" });
-  await linkAttributeToItems(pool, req.params.id, item_ids);
+  await inTransaction(async (db) => {
+    for (const itemId of item_ids) {
+      const copyId = await copyAttribute(db, req.params.id);
+      if (copyId) await linkToItem(db, copyId, itemId);
+    }
+  });
   res.json({ ok: true });
 }));
 
-// create a brand-new question (attribute), optionally with its value list, attached either to one
-// or more items (item_id / item_ids) or as a universal question asked on every report
+// create a brand-new question, either as a base question asked on every report, or for one or
+// more items (item_id / item_ids) — each item getting its own independent copy
 router.post("/admin/attributes", asyncHandler(async (req, res) => {
   const { name, input_type = "single", values = [], item_id, universal } = req.body;
   const itemIds = req.body.item_ids || (item_id ? [item_id] : []);
   if (!name) return res.status(400).json({ error: "name is required" });
   if (!itemIds.length && !universal) return res.status(400).json({ error: "item_id(s) or universal is required" });
 
-  const client = await pool.connect();
-  try {
-    await client.query("BEGIN");
-    const attrR = await client.query(
-      `INSERT INTO attributes (name, input_type, scope) VALUES ($1, $2, $3) RETURNING id`,
-      [name, input_type, universal ? "universal" : "item"]
-    );
-    const attributeId = attrR.rows[0].id;
-    for (let i = 0; i < values.length; i++) {
-      await client.query(
-        `INSERT INTO attribute_values (attribute_id, value, display_order) VALUES ($1,$2,$3)`,
-        [attributeId, values[i], i]
-      );
-    }
+  const id = await inTransaction(async (db) => {
     if (universal) {
-      await client.query(
+      const attributeId = await createAttribute(db, { name, input_type, scope: "universal", values });
+      await db.query(
         `INSERT INTO universal_attributes (attribute_id, display_order)
          VALUES ($1, (SELECT COALESCE(MAX(display_order)+1,0) FROM universal_attributes))`,
         [attributeId]
       );
-    } else {
-      await linkAttributeToItems(client, attributeId, itemIds);
+      return attributeId;
     }
-    await client.query("COMMIT");
-    res.status(201).json({ id: attributeId });
-  } catch (e) {
-    await client.query("ROLLBACK");
-    console.error(e);
-    res.status(500).json({ error: "failed to create attribute" });
-  } finally {
-    client.release();
-  }
+    let first = null;
+    for (const itemId of itemIds) {
+      const attributeId = await createAttribute(db, { name, input_type, scope: "item", values });
+      await linkToItem(db, attributeId, itemId);
+      first ??= attributeId;
+    }
+    return first;
+  });
+  res.status(201).json({ id });
 }));
 
-// remove a question from one item only (the question and its other item-links are untouched)
+// remove a question from an item. Since every item has its own copy, the question itself is then
+// deleted too — unless past reports answered it, in which case it's kept so those answers survive.
 router.delete("/admin/items/:itemId/attributes/:attributeId", asyncHandler(async (req, res) => {
+  const { itemId, attributeId } = req.params;
+  await pool.query(`DELETE FROM item_attributes WHERE item_id = $1 AND attribute_id = $2`, [itemId, attributeId]);
   await pool.query(
-    `DELETE FROM item_attributes WHERE item_id = $1 AND attribute_id = $2`,
-    [req.params.itemId, req.params.attributeId]
+    `DELETE FROM attributes a WHERE a.id = $1 AND a.scope = 'item'
+       AND NOT EXISTS (SELECT 1 FROM item_attributes WHERE attribute_id = a.id)
+       AND NOT EXISTS (SELECT 1 FROM report_attribute_values WHERE attribute_id = a.id)`,
+    [attributeId]
   );
   res.json({ ok: true });
 }));
 
-// delete a question entirely — cascades to every item/universal link, its values, and every past
-// answer recorded for it. Destructive; the client confirms with the admin before calling this.
+// delete a base question entirely — cascades to its values and every past answer recorded for it.
+// Destructive; the client confirms with the admin before calling this.
 router.delete("/admin/attributes/:id", asyncHandler(async (req, res) => {
   await pool.query(`DELETE FROM attributes WHERE id = $1`, [req.params.id]);
   res.json({ ok: true });
+}));
+
+// copy another list's answers into this one (appended in the source's order; answers already in
+// this list are skipped, hidden ones are brought back)
+router.post("/admin/attributes/:attributeId/values/copy", asyncHandler(async (req, res) => {
+  const { from_attribute_id } = req.body;
+  if (!from_attribute_id) return res.status(400).json({ error: "from_attribute_id is required" });
+  const r = await pool.query(
+    `INSERT INTO attribute_values (attribute_id, value, display_order)
+     SELECT $1, src.value,
+            (SELECT COALESCE(MAX(display_order), -1) FROM attribute_values WHERE attribute_id = $1) + src.n
+     FROM (SELECT value, ROW_NUMBER() OVER (ORDER BY display_order) AS n
+           FROM attribute_values WHERE attribute_id = $2 AND NOT hidden) src
+     ON CONFLICT (attribute_id, value) DO UPDATE SET hidden = false WHERE attribute_values.hidden
+     RETURNING id`,
+    [req.params.attributeId, from_attribute_id]
+  );
+  res.json({ ok: true, count: r.rowCount });
 }));
 
 // add a selectable value to an attribute
@@ -184,13 +236,10 @@ router.get("/admin/items", asyncHandler(async (req, res) => {
   res.json(r.rows);
 }));
 
-// one item's questions for the admin editor — like the public endpoint, plus allow_other and the
-// items sharing each question (editing a shared question's values affects all of them)
+// one item's questions for the admin editor — like the public endpoint, plus allow_other
 router.get("/admin/items/:itemId/attributes", asyncHandler(async (req, res) => {
   const r = await pool.query(
-    `SELECT a.id, a.name, a.input_type, ia.display_order, ia.weight, ia.required, ia.allow_other,
-            (SELECT array_agg(i.name ORDER BY i.name) FROM item_attributes x JOIN items i ON i.id = x.item_id
-             WHERE x.attribute_id = a.id) AS shared_items
+    `SELECT a.id, a.name, a.input_type, ia.display_order, ia.weight, ia.required, ia.allow_other
      FROM item_attributes ia JOIN attributes a ON a.id = ia.attribute_id
      WHERE ia.item_id = $1 ORDER BY ia.display_order`,
     [req.params.itemId]

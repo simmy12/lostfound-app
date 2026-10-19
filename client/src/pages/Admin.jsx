@@ -244,14 +244,35 @@ function parseValuesInput(text) {
   return text.split(/[\n,]/).map((v) => v.trim()).filter(Boolean);
 }
 
-// "item1, item2, item3 ועוד 5" — short summary of which items share a question
-function sharedSummary(names, max = 4) {
-  if (names.length <= max) return names.join(", ");
-  return names.slice(0, max).join(", ") + ` ועוד ${names.length - max}`;
+const isChoiceType = (t) => t === "single" || t === "multi";
+
+// "מעיל / צבע" or "שאלת בסיס / אזור ארץ"
+function listLabel(a) {
+  return (a.scope === "universal" ? "שאלת בסיס" : a.item_names[0] || "—") + " / " + a.name;
 }
 
-// "+ add a question" form. For items it can either link an existing (shared) question — so the
-// item uses the same answer list as every other item asking it — or create a brand-new one.
+// searchable dropdown over every question in the system (one per item, plus base questions)
+function ListPicker({ lists, value, onChange, excludeId, choiceOnly }) {
+  const [q, setQ] = useState("");
+  const query = q.trim();
+  const options = lists
+    .filter((a) => a.id !== excludeId && (!choiceOnly || isChoiceType(a.input_type)))
+    .map((a) => ({ id: a.id, label: listLabel(a) }))
+    .filter((o) => !query || o.label.includes(query))
+    .sort((x, y) => x.label.localeCompare(y.label, "he"));
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+      <input type="text" placeholder="חיפוש לפי שם פריט או שאלה..." value={q} onChange={(e) => setQ(e.target.value)} />
+      <select value={value || ""} onChange={(e) => onChange(Number(e.target.value) || null)}>
+        <option value="">— בחר/י ({options.length}) —</option>
+        {options.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
+      </select>
+    </div>
+  );
+}
+
+// "+ add a question" form. For items it can either copy an existing question (the item gets its
+// own independent copy, answers included) or create a brand-new one.
 // onSubmit gets { existingId } or { payload: {name, input_type, values} }. alwaysOpen/submitLabel/
 // disabled are for the bulk "add to several items" panel.
 function NewAttributeForm({ onSubmit, allowExisting, alwaysOpen, submitLabel = "+ הוסף שאלה", disabled }) {
@@ -300,7 +321,7 @@ function NewAttributeForm({ onSubmit, allowExisting, alwaysOpen, submitLabel = "
         {allowExisting && (
           <div className="opts" style={{ marginBottom: 10 }}>
             <button type="button" className={"opt-btn" + (mode === "existing" ? " sel" : "")} onClick={() => setMode("existing")}>
-              שאלה קיימת (רשימה משותפת)
+              העתק שאלה קיימת
             </button>
             <button type="button" className={"opt-btn" + (mode === "new" ? " sel" : "")} onClick={() => setMode("new")}>
               שאלה חדשה
@@ -309,17 +330,10 @@ function NewAttributeForm({ onSubmit, allowExisting, alwaysOpen, submitLabel = "
         )}
         {mode === "existing" && (
           <div style={{ marginBottom: 10 }}>
-            <label>בחר/י שאלה</label>
-            <select value={existingId || ""} onChange={(e) => setExistingId(Number(e.target.value) || null)}>
-              <option value="">— בחר/י —</option>
-              {existing.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.name} ({a.item_count} פריטים{a.item_names.length ? ": " + sharedSummary(a.item_names, 3) : ""})
-                </option>
-              ))}
-            </select>
+            <label>בחר/י שאלה להעתקה</label>
+            <ListPicker lists={existing.filter((a) => a.scope === "item")} value={existingId} onChange={setExistingId} />
             <p className="muted" style={{ fontSize: 12, marginTop: 4 }}>
-              השאלה תשתמש באותה רשימת תשובות כמו שאר הפריטים — שינוי ברשימה ישפיע על כולם.
+              תיווצר העתקה של השאלה עם כל התשובות שלה. שינויים בה לא ישפיעו על פריטים אחרים.
             </p>
           </div>
         )}
@@ -360,7 +374,7 @@ function NewAttributeForm({ onSubmit, allowExisting, alwaysOpen, submitLabel = "
 // One question's full editor card: rename, required toggle, weight, and — for choice-type
 // questions — its answer options. Shared by item-specific and universal (base) questions, so
 // both get exactly the same editing power.
-function QuestionCard({ attr, onRename, onSetWeight, onSetRequired, onSetAllowOther, onAddValue, onDeleteValue, onReorderValues, onRemoveFromItem, onDeleteEntirely }) {
+function QuestionCard({ attr, onRename, onSetWeight, onSetRequired, onSetAllowOther, onAddValue, onDeleteValue, onReorderValues, onCopyValues, onDelete }) {
   const [name, setName] = useState(attr.name);
   const [newValue, setNewValue] = useState("");
   const [nameStatus, setNameStatus] = useState(null); // null | "saving" | "saved" | error text
@@ -394,7 +408,23 @@ function QuestionCard({ attr, onRename, onSetWeight, onSetRequired, onSetAllowOt
   }
 
   const isChoice = attr.input_type === "single" || attr.input_type === "multi";
-  const shared = attr.shared_items || [];
+  const [copyOpen, setCopyOpen] = useState(false);
+  const [copyLists, setCopyLists] = useState([]);
+  const [copyFrom, setCopyFrom] = useState(null);
+  const [copyMsg, setCopyMsg] = useState(null);
+
+  function openCopy() {
+    setCopyOpen(true);
+    setCopyMsg(null);
+    api.adminListAttributes().then(setCopyLists);
+  }
+
+  async function copyValues() {
+    if (!copyFrom) return;
+    const n = await onCopyValues(copyFrom);
+    setCopyMsg(n ? `✓ נוספו ${n} תשובות` : "כל התשובות כבר קיימות ברשימה");
+    setCopyFrom(null);
+  }
 
   // drag-to-reorder answer tags with pointer events (mouse and touch alike): the list is reordered
   // live as the pointer passes over other tags, and saved on release. "אחר..." values stay pinned
@@ -492,21 +522,9 @@ function QuestionCard({ attr, onRename, onSetWeight, onSetRequired, onSetAllowOt
             value={attr.weight}
             onChange={(e) => onSetWeight(Number(e.target.value))}
           />
-          {onRemoveFromItem && (
-            <button className="btn btn-sm" onClick={onRemoveFromItem} title="השאלה תוסר רק מהפריט הזה, ותישאר בשאר הפריטים">
-              הסר מהפריט הזה בלבד
-            </button>
-          )}
-          <button className="btn btn-sm btn-da" onClick={onDeleteEntirely} title="השאלה תימחק מכל הפריטים שיש להם אותה">
-            {onRemoveFromItem ? `מחק מכל הפריטים (${shared.length || 1})` : "מחק שאלה זו"}
-          </button>
+          <button className="btn btn-sm btn-da" onClick={onDelete}>מחק שאלה</button>
         </div>
       </div>
-      {shared.length > 1 && (
-        <div className="muted" style={{ fontSize: 12, padding: "8px 14px 0" }} title={shared.join(", ")}>
-          🔗 משותפת ל-{shared.length} פריטים: {sharedSummary(shared)} — שינוי בשם או ברשימה ישפיע על כולם
-        </div>
-      )}
       {isChoice && (
         <div className="q-card-body">
           <div className="chip-row">
@@ -538,14 +556,28 @@ function QuestionCard({ attr, onRename, onSetWeight, onSetRequired, onSetAllowOt
             />
             <button className="btn btn-sm btn-pr" onClick={addValue}>+ הוסף ערך</button>
           </div>
+          {!copyOpen && (
+            <button className="btn btn-sm" style={{ marginTop: 8 }} onClick={openCopy}>📋 העתק תשובות מרשימה אחרת</button>
+          )}
+          {copyOpen && (
+            <div style={{ marginTop: 10, padding: 10, border: "1px dashed var(--border2)", borderRadius: "var(--r)" }}>
+              <label>מאיזו רשימה להעתיק? (התשובות יתווספו לרשימה הזו, בלי כפילויות)</label>
+              <ListPicker lists={copyLists} value={copyFrom} onChange={setCopyFrom} excludeId={attr.id} choiceOnly />
+              <div style={{ display: "flex", gap: 6, marginTop: 8, alignItems: "center" }}>
+                <button className="btn btn-sm btn-pr" onClick={copyValues} disabled={!copyFrom}>העתק</button>
+                <button className="btn btn-sm" onClick={() => setCopyOpen(false)}>סגור</button>
+                {copyMsg && <span style={{ color: "#15803d", fontWeight: 600, fontSize: 13 }}>{copyMsg}</span>}
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>
   );
 }
 
-// Add one question (existing/shared or brand-new) to many items at once: tick items, pick the
-// question, submit. Items that already ask the question are left as they are.
+// Add one question (a copy of an existing one, or brand-new) to many items at once: tick items,
+// pick the question, submit. Every ticked item gets its own independent copy.
 function BulkAddPanel({ items, onClose }) {
   const [checked, setChecked] = useState(new Set());
   const [search, setSearch] = useState("");
@@ -731,8 +763,7 @@ export default function Admin() {
 
   // a value used by past reports is hidden (not deleted) server-side — either way it leaves the list
   async function deleteValue(attr, value, fromUniversal) {
-    const sharedNote = attr.shared_items?.length > 1 ? `\nהרשימה משותפת ל-${attr.shared_items.length} פריטים — התשובה תוסר מכולם.` : "";
-    if (!window.confirm(`להסיר את התשובה "${value.value}" מהשאלה "${attr.name}"?${sharedNote}`)) return;
+    if (!window.confirm(`האם את/ה בטוח/ה שברצונך להסיר את התשובה "${value.value}" מהשאלה "${attr.name}"?`)) return;
     try {
       await api.adminDeleteValue(value.id);
     } catch {
@@ -756,19 +787,22 @@ export default function Admin() {
     loadUniversal();
   }
 
+  async function copyValuesInto(attrId, fromId, fromUniversal) {
+    const r = await api.adminCopyValues(attrId, fromId);
+    if (fromUniversal) loadUniversal();
+    else setAttrs(await api.adminGetItemAttributes(selectedItem.id));
+    return r.count;
+  }
+
   async function removeItemAttribute(attr) {
-    if (!window.confirm(`להסיר את השאלה "${attr.name}" מהפריט "${selectedItem.name}" בלבד?\nהשאלה תישאר בשאר הפריטים.`)) return;
+    if (!window.confirm(`האם את/ה בטוח/ה שברצונך למחוק את השאלה "${attr.name}" מהפריט "${selectedItem.name}"?`)) return;
     await api.adminRemoveItemAttribute(selectedItem.id, attr.id);
     setAttrs((prev) => prev.filter((a) => a.id !== attr.id));
   }
 
   async function deleteAttributeEntirely(attrId, fromUniversal) {
     const attr = (fromUniversal ? universal : attrs).find((a) => a.id === attrId);
-    const n = attr?.shared_items?.length || 1;
-    const msg = fromUniversal
-      ? `למחוק את שאלת הבסיס "${attr?.name}" לגמרי?\nהיא לא תופיע יותר בדיווחים, והתשובות שניתנו לה בדיווחים קיימים יימחקו.`
-      : `למחוק את השאלה "${attr?.name}" מכל ${n} הפריטים שיש להם אותה?\nהתשובות שניתנו לה בדיווחים קיימים יימחקו.\n\nאם רוצים להסיר רק מהפריט הזה — לחצו ביטול ובחרו "הסר מהפריט הזה בלבד".`;
-    if (!window.confirm(msg)) return;
+    if (!window.confirm(`האם את/ה בטוח/ה שברצונך למחוק את שאלת הבסיס "${attr?.name}"?\nהיא לא תופיע יותר בדיווחים, והתשובות שניתנו לה בדיווחים קיימים יימחקו.`)) return;
     await api.adminDeleteAttribute(attrId);
     if (fromUniversal) {
       setUniversal((prev) => prev.filter((a) => a.id !== attrId));
@@ -906,7 +940,8 @@ export default function Admin() {
                   onAddValue={(v) => addValue(selectedUniversal.id, v, true)}
                   onDeleteValue={(v) => deleteValue(selectedUniversal, v, true)}
                   onReorderValues={(values) => reorderValues(selectedUniversal.id, values, true)}
-                  onDeleteEntirely={() => deleteAttributeEntirely(selectedUniversal.id, true)}
+                  onCopyValues={(fromId) => copyValuesInto(selectedUniversal.id, fromId, true)}
+                  onDelete={() => deleteAttributeEntirely(selectedUniversal.id, true)}
                 />
               </div>
             </div>
@@ -953,8 +988,8 @@ export default function Admin() {
                     onAddValue={(v) => addValue(a.id, v, false)}
                     onDeleteValue={(v) => deleteValue(a, v, false)}
                     onReorderValues={(values) => reorderValues(a.id, values, false)}
-                    onRemoveFromItem={() => removeItemAttribute(a)}
-                    onDeleteEntirely={() => deleteAttributeEntirely(a.id, false)}
+                    onCopyValues={(fromId) => copyValuesInto(a.id, fromId, false)}
+                    onDelete={() => removeItemAttribute(a)}
                   />
                 ))}
 

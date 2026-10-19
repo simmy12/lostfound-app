@@ -205,3 +205,4 @@ textarea{resize:vertical;min-height:72px;line-height:1.5}
 .q-block.q-err{border:2px solid var(--da);border-radius:var(--r);padding:10px;background:var(--da-l)}
 .q-err-msg{color:var(--da);font-size:12px;font-weight:600;margin-top:6px}
 .err-text{color:var(--da);font-size:13px;font-weight:600}
+.opt-search{margin-bottom:8px}

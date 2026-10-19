@@ -9,6 +9,7 @@ const MAX_LINKED = 4;
 const MAX_CONTENTS = 5;
 const MIN_CONTENTS = 2;
 const MULTI_SELECT_CAP = 2;
+const VALUE_SEARCH_MIN = 12; // from this many answer options, offer a search box above them
 
 // true once the reporter pressed "המשך" on a step that still has missing fields — from then on
 // every unfilled "אחר" text box and unanswered required question on that step gets a red frame
@@ -32,6 +33,7 @@ function isYesNo(attr) {
 //   text/number/date: { attribute_id, free_text }
 function AttributeField({ attr, value, onChange }) {
   const showErrors = useContext(ShowErrors);
+  const [search, setSearch] = useState("");
   const otherCls = showErrors && !(value?.free_text || "").trim() ? "input-err" : undefined;
   if (attr.values?.length && isYesNo(attr)) {
     const isOther = !!value?.isOther;
@@ -74,10 +76,18 @@ function AttributeField({ attr, value, onChange }) {
     const selected = value?.value_ids || [];
     const isOther = !!value?.isOther;
     const atCap = selected.length + (isOther ? 1 : 0) >= MULTI_SELECT_CAP;
+    const searchable = attr.values.length >= VALUE_SEARCH_MIN;
+    const q = search.trim();
+    // already-picked answers stay visible while searching, so they can still be un-picked
+    const shown = searchable && q ? attr.values.filter((v) => v.value.includes(q) || selected.includes(v.id)) : attr.values;
     return (
       <div>
+        {searchable && (
+          <input type="text" className="opt-search" placeholder="חיפוש..." value={search} onChange={(e) => setSearch(e.target.value)} />
+        )}
+        {searchable && q && !shown.length && <p className="muted" style={{ margin: "4px 0" }}>לא נמצאו תשובות מתאימות.</p>}
         <div className="opts">
-          {attr.values.map((v) => {
+          {shown.map((v) => {
             const isSel = selected.includes(v.id);
             const disabled = !isSel && atCap;
             return (
