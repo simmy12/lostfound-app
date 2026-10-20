@@ -49,6 +49,11 @@ export const api = {
     req(`/admin/attributes/${attrId}/values`, { method: "POST", body: JSON.stringify({ value }) }),
   adminSetAttributeType: (attrId, inputType, maxSelect) =>
     req(`/admin/attributes/${attrId}/type`, { method: "PUT", body: JSON.stringify({ input_type: inputType, max_select: maxSelect }) }),
+  adminRenameValue: (valueId, value) =>
+    req(`/admin/attribute-values/${valueId}`, { method: "PUT", body: JSON.stringify({ value }) }),
+  adminRenameItem: (itemId, name) => req(`/admin/items/${itemId}/name`, { method: "PUT", body: JSON.stringify({ name }) }),
+  adminContainers: () => req("/admin/containers"),
+  adminReorderContainers: (itemIds) => req("/admin/containers/order", { method: "PUT", body: JSON.stringify({ item_ids: itemIds }) }),
   adminCopyValues: (attrId, fromAttrId) =>
     req(`/admin/attributes/${attrId}/values/copy`, { method: "POST", body: JSON.stringify({ from_attribute_id: fromAttrId }) }),
   adminReorderValues: (attrId, valueIds) =>

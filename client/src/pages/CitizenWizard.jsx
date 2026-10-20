@@ -39,8 +39,8 @@ function AttributeField({ attr, value, onChange }) {
   const showErrors = useContext(ShowErrors);
   const [search, setSearch] = useState("");
   const otherCls = showErrors && !(value?.free_text || "").trim() ? "input-err" : undefined;
+  // yes/no: exactly one of the two, never "אחר"
   if (isChoice(attr) && isYesNo(attr)) {
-    const isOther = !!value?.isOther;
     return (
       <div>
         <div className="opts">
@@ -48,31 +48,13 @@ function AttributeField({ attr, value, onChange }) {
             <button
               key={v.id}
               type="button"
-              className={"opt-btn" + (!isOther && value?.value_id === v.id ? " sel" : "")}
+              className={"opt-btn" + (value?.value_id === v.id ? " sel" : "")}
               onClick={() => onChange({ attribute_id: attr.id, value_id: v.id })}
             >
               {v.value}
             </button>
           ))}
-          {attr.allow_other !== false && (
-            <button
-              type="button"
-              className={"opt-btn" + (isOther ? " sel" : "")}
-              onClick={() => onChange({ attribute_id: attr.id, isOther: true, free_text: value?.free_text || "" })}
-            >
-              אחר
-            </button>
-          )}
         </div>
-        {isOther && (
-          <input
-            type="text"
-            className={otherCls}
-            placeholder="לפרט..."
-            value={value?.free_text || ""}
-            onChange={(e) => onChange({ attribute_id: attr.id, isOther: true, free_text: e.target.value })}
-          />
-        )}
       </div>
     );
   }

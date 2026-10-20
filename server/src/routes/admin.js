@@ -239,6 +239,22 @@ router.put("/admin/attributes/:attributeId/values/order", asyncHandler(async (re
   res.json({ ok: true });
 }));
 
+// reword an answer in place — it keeps its id, so reports that already picked it still show it
+// (with the new wording) and still match against new reports that pick it
+router.put("/admin/attribute-values/:id", asyncHandler(async (req, res) => {
+  const value = (req.body.value || "").trim();
+  if (!value) return res.status(400).json({ error: "value is required" });
+  if (isOtherText(value)) return res.status(400).json({ error: "\"אחר\" אינו תשובה רגילה" });
+  try {
+    const r = await pool.query(`UPDATE attribute_values SET value = $1 WHERE id = $2 RETURNING id`, [value, req.params.id]);
+    if (!r.rows.length) return res.status(404).json({ error: "not found" });
+  } catch (e) {
+    if (e.code === "23505") return res.status(400).json({ error: "תשובה בשם הזה כבר קיימת ברשימה" });
+    throw e;
+  }
+  res.json({ ok: true });
+}));
+
 // a value already picked in past reports can't be deleted (those answers point at it), so it's
 // hidden from new reports instead; an unused value is deleted outright
 router.delete("/admin/attribute-values/:id", asyncHandler(async (req, res) => {
@@ -254,7 +270,7 @@ router.delete("/admin/attribute-values/:id", asyncHandler(async (req, res) => {
 // list every item together with its attribute/weight config — feeds the admin tree screen
 router.get("/admin/items", asyncHandler(async (req, res) => {
   const r = await pool.query(
-    `SELECT i.id, i.name, i.sub_id, i.can_be_contained, i.can_have_nearby, i.can_contain_items,
+    `SELECT i.id, i.name, i.sub_id, i.can_be_contained, i.can_have_nearby, i.can_contain_items, i.is_common_container,
             cs.name AS sub_name, cm.id AS main_id, cm.name AS main_name
      FROM items i JOIN categories_sub cs ON cs.id = i.sub_id JOIN categories_main cm ON cm.id = cs.main_id
      ORDER BY (cm.name = 'אחר'), cm.name, (cs.name = 'אחר'), cs.name, (i.name = 'אחר'), i.name`
@@ -347,16 +363,46 @@ router.post("/admin/items", asyncHandler(async (req, res) => {
   res.status(201).json({ id: newItemId });
 }));
 
+router.put("/admin/items/:id/name", asyncHandler(async (req, res) => {
+  const name = (req.body.name || "").trim();
+  if (!name) return res.status(400).json({ error: "name is required" });
+  const r = await pool.query(`UPDATE items SET name = $1 WHERE id = $2 RETURNING id`, [name, req.params.id]);
+  if (!r.rows.length) return res.status(404).json({ error: "not found" });
+  res.json({ ok: true });
+}));
+
+// ---- the "בתוך מה היה?" list: the items a reporter can pick as "it was inside this" ----
+
+router.get("/admin/containers", asyncHandler(async (req, res) => {
+  const r = await pool.query(`SELECT id, name FROM items WHERE is_common_container ORDER BY container_order, name`);
+  res.json(r.rows);
+}));
+
+router.put("/admin/containers/order", asyncHandler(async (req, res) => {
+  const { item_ids } = req.body;
+  if (!Array.isArray(item_ids)) return res.status(400).json({ error: "item_ids is required" });
+  await pool.query(
+    `UPDATE items i SET container_order = o.pos FROM unnest($1::int[]) WITH ORDINALITY AS o(id, pos) WHERE i.id = o.id`,
+    [item_ids]
+  );
+  res.json({ ok: true });
+}));
+
 // per-item flags: whether to ask "was this inside something?" / "anything found nearby?"
 router.put("/admin/items/:id/flags", asyncHandler(async (req, res) => {
-  const { can_be_contained, can_have_nearby, can_contain_items } = req.body;
+  const { can_be_contained, can_have_nearby, can_contain_items, is_common_container } = req.body;
   const r = await pool.query(
     `UPDATE items SET
-       can_be_contained  = COALESCE($1, can_be_contained),
-       can_have_nearby   = COALESCE($2, can_have_nearby),
-       can_contain_items = COALESCE($3, can_contain_items)
-     WHERE id = $4 RETURNING id, can_be_contained, can_have_nearby, can_contain_items`,
-    [can_be_contained, can_have_nearby, can_contain_items, req.params.id]
+       can_be_contained    = COALESCE($1, can_be_contained),
+       can_have_nearby     = COALESCE($2, can_have_nearby),
+       can_contain_items   = COALESCE($3, can_contain_items),
+       -- newly added to the "בתוך מה היה?" list -> goes last
+       container_order     = CASE WHEN $4 AND NOT is_common_container
+                               THEN (SELECT COALESCE(MAX(container_order), 0) + 1 FROM items WHERE is_common_container)
+                               ELSE container_order END,
+       is_common_container = COALESCE($4, is_common_container)
+     WHERE id = $5 RETURNING id, can_be_contained, can_have_nearby, can_contain_items, is_common_container`,
+    [can_be_contained, can_have_nearby, can_contain_items, is_common_container, req.params.id]
   );
   if (!r.rows.length) return res.status(404).json({ error: "not found" });
   res.json(r.rows[0]);
@@ -368,6 +414,8 @@ router.put("/admin/items/:id/flags", asyncHandler(async (req, res) => {
 router.get("/admin/other-answers", asyncHandler(async (req, res) => {
   const r = await pool.query(
     `SELECT rav.attribute_id, a.name AS attribute_name, a.scope,
+            (SELECT string_agg(i.name, ', ') FROM item_attributes ia JOIN items i ON i.id = ia.item_id
+             WHERE ia.attribute_id = rav.attribute_id) AS item_name,
             trim(rav.free_text) AS text, COUNT(*) AS count,
             MAX(rav.id) AS sample_id
      FROM report_attribute_values rav

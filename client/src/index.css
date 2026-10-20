@@ -217,3 +217,5 @@ textarea{resize:vertical;min-height:72px;line-height:1.5}
 .q-card input.q-card-name:focus{border-color:var(--pr);background:var(--white)}
 .q-card input.score-pill{width:64px;flex:0 0 64px;padding:5px 6px;border-radius:999px;font-size:12px;text-align:center}
 .q-card .q-card-name-wrap{min-width:auto;flex-wrap:wrap}
+.container-row{display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid var(--border);border-radius:var(--r);background:var(--white);cursor:grab;user-select:none;touch-action:none}
+.container-row.dragging{opacity:.4;border-style:dashed}

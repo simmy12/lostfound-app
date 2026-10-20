@@ -24,6 +24,7 @@ CREATE TABLE categories_sub (
 );
 
 CREATE TABLE items (
+  -- container_order: position in the "בתוך מה היה?" list (items with is_common_container)
   id                INTEGER PRIMARY KEY,      -- keeps original מזהה פריט ids from source data
   sub_id            INTEGER NOT NULL REFERENCES categories_sub(id) ON DELETE CASCADE,
   name              TEXT NOT NULL,
@@ -31,6 +32,7 @@ CREATE TABLE items (
   can_have_nearby   BOOLEAN NOT NULL DEFAULT true,  -- ask "were other items found/lost nearby?"
   can_contain_items BOOLEAN NOT NULL DEFAULT false, -- ask "what was inside it?" (true for bags/suitcases etc.)
   is_common_container BOOLEAN NOT NULL DEFAULT false, -- offered in the curated "בתוך מה היה?" list
+  container_order   INTEGER NOT NULL DEFAULT 0,     -- position in that list (admin drags to reorder)
   is_other_placeholder BOOLEAN NOT NULL DEFAULT false -- the generic "אחר" item; picking it requires free text and queues the report for admin review
 );
 

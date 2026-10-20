@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { api } from "../api";
 
 const INPUT_TYPE_LABEL = { single: "בחירה אחת", multi: "בחירה מרובה", text: "טקסט חופשי", number: "מספר" };
@@ -31,16 +31,176 @@ function TypePicker({ type, max, onChange }) {
   );
 }
 
+const isYesNoList = (values) => values.length === 2 && values.some((v) => v.value === "כן") && values.some((v) => v.value === "לא");
+
+// Drag-to-reorder with pointer events (mouse and touch alike). Elements carry
+// data-sort-group={group} data-sort-id={id}; the list reorders live as the pointer passes over
+// another element of the same group and onReorder(newList) runs on release if the order changed.
+// Pressing on a button/input inside an element doesn't start a drag.
+function usePointerSort(list, group, onReorder, canMove = () => true) {
+  const [dragList, setDragList] = useState(null);
+  const [dragId, setDragId] = useState(null);
+
+  function startDrag(e, item) {
+    if (!canMove(item) || e.button > 0 || e.target.closest("button, input")) return;
+    e.preventDefault();
+    const original = list;
+    let cur = original;
+    let lastSwap = null; // just swapped with — ignored until the pointer leaves it, so items of different widths don't flip back and forth
+    setDragId(item.id);
+    setDragList(cur);
+
+    const overIdAt = (ev) => {
+      const el = document.elementFromPoint(ev.clientX, ev.clientY)?.closest(`[data-sort-group="${group}"]`);
+      return el ? Number(el.dataset.sortId) : null;
+    };
+    const move = (ev) => {
+      const overId = overIdAt(ev);
+      if (overId !== lastSwap) lastSwap = null;
+      if (!overId || overId === item.id || overId === lastSwap) return;
+      const from = cur.findIndex((x) => x.id === item.id);
+      const to = cur.findIndex((x) => x.id === overId);
+      if (to < 0 || !canMove(cur[to])) return;
+      const next = [...cur];
+      next.splice(to, 0, next.splice(from, 1)[0]);
+      cur = next;
+      lastSwap = overId;
+      setDragList(next);
+    };
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", up);
+      setDragId(null);
+      setDragList(null);
+      if (cur.some((x, i) => x.id !== original[i]?.id)) onReorder(cur);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", up);
+  }
+
+  return { shown: dragList || list, startDrag, dragId };
+}
+
+// small inline text editor: Enter saves, Esc cancels
+function InlineEdit({ initial, onSave, onCancel, width = 140 }) {
+  const [text, setText] = useState(initial);
+  return (
+    <span style={{ display: "inline-flex", gap: 4, alignItems: "center" }}>
+      <input
+        type="text"
+        autoFocus
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") onSave(text.trim());
+          if (e.key === "Escape") onCancel();
+        }}
+        style={{ width, padding: "2px 6px", fontSize: 13 }}
+      />
+      <button type="button" className="btn btn-sm btn-pr" onClick={() => onSave(text.trim())}>שמור</button>
+      <button type="button" className="btn btn-sm" onClick={onCancel}>ביטול</button>
+    </span>
+  );
+}
+
+// The "בתוך מה היה?" list: which items a reporter can pick as "it was inside this", their order
+// (drag) and wording (renames the item itself, everywhere). Items join the list from here or
+// from an item's "שאלות מיוחדות".
+function ContainersPanel({ items, onClose, onCatalogChanged }) {
+  const [list, setList] = useState([]);
+  const [editingId, setEditingId] = useState(null);
+  const [addId, setAddId] = useState("");
+
+  function load() { api.adminContainers().then(setList); }
+  useEffect(load, []);
+
+  const { shown, startDrag, dragId } = usePointerSort(list, "containers", async (next) => {
+    setList(next);
+    await api.adminReorderContainers(next.map((x) => x.id));
+  });
+
+  async function rename(it, name) {
+    if (!name || name === it.name) return setEditingId(null);
+    await api.adminRenameItem(it.id, name);
+    setEditingId(null);
+    load();
+    onCatalogChanged();
+  }
+
+  async function remove(it) {
+    if (!window.confirm(`האם את/ה בטוח/ה שברצונך להסיר את "${it.name}" מהרשימה "בתוך מה היה?"?\n(הפריט עצמו נשאר בקטלוג)`)) return;
+    await api.adminSetItemFlags(it.id, { is_common_container: false });
+    load();
+    onCatalogChanged();
+  }
+
+  async function add() {
+    if (!addId) return;
+    await api.adminSetItemFlags(Number(addId), { is_common_container: true });
+    setAddId("");
+    load();
+    onCatalogChanged();
+  }
+
+  const inList = new Set(list.map((x) => x.id));
+  return (
+    <div className="admin-panel">
+      <div className="admin-panel-h" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <span>📦 הרשימה "בתוך מה היה?"</span>
+        <button className="btn btn-sm" onClick={onClose}>סגור</button>
+      </div>
+      <div className="admin-section">
+        <p className="muted" style={{ marginTop: 0 }}>
+          זו הרשימה שהמשתמש רואה כשהוא עונה שהפריט היה בתוך משהו. אפשר לגרור כדי לשנות את הסדר (העליון מוצג ראשון),
+          לשנות שם (✎) או להסיר. שינוי שם משנה את שם הפריט בכל המערכת.
+        </p>
+        <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 14 }}>
+          {shown.map((it, i) => (
+            <div
+              key={it.id}
+              data-sort-group="containers"
+              data-sort-id={it.id}
+              onPointerDown={(e) => editingId !== it.id && startDrag(e, it)}
+              className={"container-row" + (dragId === it.id ? " dragging" : "")}
+            >
+              <span className="muted" style={{ width: 22 }}>{i + 1}.</span>
+              {editingId === it.id ? (
+                <InlineEdit initial={it.name} onSave={(n) => rename(it, n)} onCancel={() => setEditingId(null)} width={200} />
+              ) : (
+                <>
+                  <span style={{ flex: 1, fontWeight: 600 }}>{it.name}</span>
+                  <button type="button" className="btn btn-sm btn-soft" onClick={() => setEditingId(it.id)}>✎ שינוי שם</button>
+                  <button type="button" className="btn btn-sm btn-soft" onClick={() => remove(it)}>הסר מהרשימה</button>
+                </>
+              )}
+            </div>
+          ))}
+          {!list.length && <p className="muted">הרשימה ריקה.</p>}
+        </div>
+        <label>הוספת פריט לרשימה</label>
+        <div style={{ display: "flex", gap: 6 }}>
+          <select value={addId} onChange={(e) => setAddId(e.target.value)}>
+            <option value="">— בחר/י פריט —</option>
+            {items.filter((it) => !inList.has(it.id)).map((it) => <option key={it.id} value={it.id}>{it.name} ({it.sub_name})</option>)}
+          </select>
+          <button className="btn btn-sm btn-pr" style={{ whiteSpace: "nowrap", flexShrink: 0 }} onClick={add} disabled={!addId}>+ הוסף</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function OtherAnswersPanel() {
   const [rows, setRows] = useState([]);
-  const [retroactive, setRetroactive] = useState({});
   const [reassignValue, setReassignValue] = useState({});
 
   function load() { api.adminOtherAnswers().then(setRows); }
   useEffect(load, []);
 
   async function promote(row) {
-    await api.adminPromoteOther(row.attribute_id, row.text, !!retroactive[row.sample_id]);
+    await api.adminPromoteOther(row.attribute_id, row.text, true);
     load();
   }
 
@@ -59,17 +219,9 @@ function OtherAnswersPanel() {
       <div className="admin-section">
         {rows.map((r) => (
           <div key={r.attribute_id + "|" + r.text} style={{ borderBottom: "1px solid var(--border)", paddingBottom: 10, marginBottom: 10 }}>
-            <div><b>{r.attribute_name}</b> — "{r.text}"</div>
+            <div>{r.item_name && <span className="muted">{r.item_name} / </span>}<b>{r.attribute_name}</b> — "{r.text}"</div>
             <div className="muted" style={{ fontSize: 12, marginBottom: 6 }}>הופיע {r.count} פעמים</div>
             <div className="row" style={{ alignItems: "center", flexWrap: "wrap", gap: 8, marginBottom: 0 }}>
-              <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 13 }}>
-                <input
-                  type="checkbox"
-                  checked={!!retroactive[r.sample_id]}
-                  onChange={(e) => setRetroactive((p) => ({ ...p, [r.sample_id]: e.target.checked }))}
-                />
-                עדכן גם דיווחים קיימים
-              </label>
               <button className="btn btn-sm btn-pr" onClick={() => promote(r)}>+ הוסף לרשימה</button>
               {!!r.values?.length && (
                 <>
@@ -398,7 +550,8 @@ function NewAttributeForm({ onSubmit, allowExisting, alwaysOpen, submitLabel = "
 // One question's full editor card: rename, required toggle, weight, and — for choice-type
 // questions — its answer options. Shared by item-specific and universal (base) questions, so
 // both get exactly the same editing power.
-function QuestionCard({ attr, onRename, onSetType, onSetWeight, onSetRequired, onSetAllowOther, onAddValue, onDeleteValue, onReorderValues, onCopyValues, onDelete }) {
+function QuestionCard({ attr, onRename, onSetType, onSetWeight, onSetRequired, onSetAllowOther, onAddValue, onDeleteValue, onRenameValue, onReorderValues, onCopyValues, onDelete }) {
+  const [editingValueId, setEditingValueId] = useState(null);
   const [name, setName] = useState(attr.name);
   const [newValue, setNewValue] = useState("");
   const [nameStatus, setNameStatus] = useState(null); // null | "saving" | "saved" | error text
@@ -451,53 +604,18 @@ function QuestionCard({ attr, onRename, onSetType, onSetWeight, onSetRequired, o
     setCopyFrom(null);
   }
 
-  // drag-to-reorder answer tags with pointer events (mouse and touch alike): the list is reordered
-  // live as the pointer passes over other tags, and saved on release. "אחר..." values stay pinned
-  // last (the server always sorts them last too).
-  const [dragList, setDragList] = useState(null);
-  const dragId = useRef(null);
-  const isOtherValue = (v) => v.value.startsWith("אחר");
-  const shownValues = dragList || attr.values;
+  // drag answer tags to reorder them (saved on release)
+  const { shown: shownValues, startDrag, dragId } = usePointerSort(attr.values, "values-" + attr.id, onReorderValues);
 
-  function startDrag(e, v) {
-    if (isOtherValue(v) || e.button > 0 || e.target.closest(".tag-x")) return;
-    e.preventDefault();
-    const original = attr.values;
-    let list = original;
-    let lastSwap = null; // the tag we just swapped with — ignored until the pointer leaves it, so tags of different widths don't flip back and forth
-    dragId.current = v.id;
-    setDragList(list);
-
-    const move = (ev) => {
-      const overId = Number(document.elementFromPoint(ev.clientX, ev.clientY)?.closest("[data-vid]")?.dataset.vid);
-      if (!overId || overId === v.id) return;
-      if (overId === lastSwap) return;
-      const from = list.findIndex((x) => x.id === v.id);
-      const to = list.findIndex((x) => x.id === overId);
-      if (to < 0 || isOtherValue(list[to])) return;
-      const next = [...list];
-      next.splice(to, 0, next.splice(from, 1)[0]);
-      list = next;
-      lastSwap = overId;
-      setDragList(next);
-    };
-    const leave = (ev) => {
-      const overId = Number(document.elementFromPoint(ev.clientX, ev.clientY)?.closest("[data-vid]")?.dataset.vid);
-      if (overId !== lastSwap) lastSwap = null;
-    };
-    const up = () => {
-      window.removeEventListener("pointermove", move);
-      window.removeEventListener("pointermove", leave);
-      window.removeEventListener("pointerup", up);
-      window.removeEventListener("pointercancel", up);
-      dragId.current = null;
-      setDragList(null);
-      if (list.some((x, i) => x.id !== original[i]?.id)) onReorderValues(list);
-    };
-    window.addEventListener("pointermove", leave);
-    window.addEventListener("pointermove", move);
-    window.addEventListener("pointerup", up);
-    window.addEventListener("pointercancel", up);
+  async function saveValueText(v, text) {
+    if (!text || text === v.value) return setEditingValueId(null);
+    if (startsWithOther(text)) return window.alert(OTHER_VALUE_MSG);
+    try {
+      await onRenameValue(v, text);
+      setEditingValueId(null);
+    } catch (e) {
+      window.alert(/כבר קיימת/.test(e.message) ? "תשובה בשם הזה כבר קיימת ברשימה." : "השמירה נכשלה, נסו שוב.");
+    }
   }
 
   return (
@@ -534,7 +652,7 @@ function QuestionCard({ attr, onRename, onSetType, onSetWeight, onSetRequired, o
             <input type="checkbox" checked={!!attr.required} onChange={(e) => onSetRequired(e.target.checked)} />
             חובה
           </label>
-          {isChoice && (
+          {isChoice && !isYesNoList(attr.values) && (
             <label className={"req-toggle" + (attr.allow_other !== false ? " on" : "")} title='האם להציג למשתמש את האפשרות "אחר" עם מילוי חופשי'>
               <input type="checkbox" checked={attr.allow_other !== false} onChange={(e) => onSetAllowOther(e.target.checked)} />
               אפשר "אחר"
@@ -554,21 +672,27 @@ function QuestionCard({ attr, onRename, onSetType, onSetWeight, onSetRequired, o
         <div className="q-card-body">
           <div className="chip-row">
             {shownValues.map((v) => (
-              <span
-                className={"tag" + (isOtherValue(v) ? "" : " tag-drag") + (dragList && dragId.current === v.id ? " dragging" : "")}
-                key={v.id}
-                data-vid={v.id}
-                onPointerDown={(e) => startDrag(e, v)}
-              >
-                {v.value}
-                <button type="button" className="tag-x" title="הסר תשובה זו" onClick={() => onDeleteValue(v)}>✕</button>
-              </span>
+              editingValueId === v.id ? (
+                <InlineEdit key={v.id} initial={v.value} onSave={(t) => saveValueText(v, t)} onCancel={() => setEditingValueId(null)} />
+              ) : (
+                <span
+                  className={"tag tag-drag" + (dragId === v.id ? " dragging" : "")}
+                  key={v.id}
+                  data-sort-group={"values-" + attr.id}
+                  data-sort-id={v.id}
+                  onPointerDown={(e) => startDrag(e, v)}
+                >
+                  {v.value}
+                  <button type="button" className="tag-x" title="שינוי הנוסח (התשובה נשארת אותה תשובה בהשוואות)" onClick={() => setEditingValueId(v.id)}>✎</button>
+                  <button type="button" className="tag-x" title="הסר תשובה זו" onClick={() => onDeleteValue(v)}>✕</button>
+                </span>
+              )
             ))}
             {!attr.values.length && <span className="muted">אין ערכים מוגדרים עדיין</span>}
           </div>
           {attr.values.length > 1 && (
             <p className="muted" style={{ fontSize: 12, margin: "6px 0 0" }}>
-              ניתן לגרור תשובה כדי לשנות את הסדר. התשובה הימנית ביותר תוצג ראשונה.
+              ניתן לגרור תשובה כדי לשנות את הסדר (הימנית ביותר מוצגת ראשונה). ✎ משנה את הנוסח בלבד: דיווחים שכבר בחרו בתשובה יציגו את הנוסח החדש וימשיכו להיות מושווים אליה.
             </p>
           )}
           <div className="chip-add-row">
@@ -687,6 +811,7 @@ export default function Admin() {
   const [newItemSub, setNewItemSub] = useState(null);
   const [newItemName, setNewItemName] = useState("");
   const [bulkOpen, setBulkOpen] = useState(false);
+  const [containersOpen, setContainersOpen] = useState(false);
 
   function loadItems() { api.adminListItems().then(setItems); }
   function loadUniversal() { api.adminGetUniversalAttributes().then(setUniversal); }
@@ -700,6 +825,7 @@ export default function Admin() {
     setSelectedItem(item);
     setSelectedUniversalId(null);
     setBulkOpen(false);
+    setContainersOpen(false);
     const a = await api.adminGetItemAttributes(item.id);
     setAttrs(a);
   }
@@ -708,6 +834,7 @@ export default function Admin() {
     setSelectedUniversalId(id);
     setSelectedItem(null);
     setBulkOpen(false);
+    setContainersOpen(false);
   }
 
   async function reloadAfterCategoryChange(refreshCategories) {
@@ -797,6 +924,14 @@ export default function Admin() {
     }
   }
 
+  // reword an answer in place — same id, so past reports and matching are unaffected
+  async function renameValue(attrId, value, text, fromUniversal) {
+    await api.adminRenameValue(value.id, text);
+    const patch = (a) => (a.id === attrId ? { ...a, values: a.values.map((v) => (v.id === value.id ? { ...v, value: text } : v)) } : a);
+    if (fromUniversal) setUniversal((prev) => prev.map(patch));
+    else setAttrs((prev) => prev.map(patch));
+  }
+
   // a value used by past reports is hidden (not deleted) server-side — either way it leaves the list
   async function deleteValue(attr, value, fromUniversal) {
     if (!window.confirm(`האם את/ה בטוח/ה שברצונך להסיר את התשובה "${value.value}" מהשאלה "${attr.name}"?`)) return;
@@ -878,26 +1013,7 @@ export default function Admin() {
 
       <div className="admin-layout">
         <div className="admin-panel">
-          <div className="admin-panel-h">📋 שאלות בסיס (נשאלות בכל דיווח)</div>
-          <div className="admin-section">
-            <div className="admin-tree">
-              {universal.map((a) => (
-                <div
-                  key={a.id}
-                  className={"admin-tree-item" + (selectedUniversalId === a.id ? " act" : "")}
-                  onClick={() => selectUniversal(a.id)}
-                >
-                  <span>{a.name}</span>
-                  {!!a.required && <span className="badge badge-wa">חובה</span>}
-                </div>
-              ))}
-            </div>
-          </div>
-          <div className="admin-section">
-            <NewAttributeForm onSubmit={addUniversalAttribute} />
-          </div>
-
-          <div className="admin-panel-h" style={{ borderTop: "1px solid var(--border)" }}>🗂️ פריטים ({items.length})</div>
+          <div className="admin-panel-h">🗂️ פריטים ({items.length})</div>
           <div className="admin-section">
             <button
               className="admin-add-btn"
@@ -949,12 +1065,40 @@ export default function Admin() {
               </div>
             )}
           </div>
+          <div className="admin-panel-h" style={{ borderTop: "1px solid var(--border)" }}>📋 שאלות בסיס (נשאלות בכל דיווח)</div>
+          <div className="admin-section">
+            <div className="admin-tree">
+              {universal.map((a) => (
+                <div
+                  key={a.id}
+                  className={"admin-tree-item" + (selectedUniversalId === a.id ? " act" : "")}
+                  onClick={() => selectUniversal(a.id)}
+                >
+                  <span>{a.name}</span>
+                  {!!a.required && <span className="badge badge-wa">חובה</span>}
+                </div>
+              ))}
+            </div>
+          </div>
+          <div className="admin-section">
+            <NewAttributeForm onSubmit={addUniversalAttribute} />
+          </div>
+
+          <div className="admin-section" style={{ borderTop: "1px solid var(--border)" }}>
+            <button
+              className="admin-add-btn"
+              onClick={() => { setContainersOpen(true); setBulkOpen(false); setSelectedItem(null); setSelectedUniversalId(null); }}
+            >
+              📦 עריכת הרשימה "בתוך מה היה?"
+            </button>
+          </div>
         </div>
 
         <div style={{ minWidth: 0 }}>
           {bulkOpen && <BulkAddPanel items={items} onClose={() => setBulkOpen(false)} />}
+          {containersOpen && <ContainersPanel items={items} onClose={() => setContainersOpen(false)} onCatalogChanged={loadItems} />}
 
-          {!bulkOpen && !selectedItem && !selectedUniversal && (
+          {!bulkOpen && !containersOpen && !selectedItem && !selectedUniversal && (
             <div className="admin-panel">
               <div className="admin-empty">
                 <div className="admin-empty-icon">🗂️</div>
@@ -977,6 +1121,7 @@ export default function Admin() {
                   onAddValue={(v) => addValue(selectedUniversal.id, v, true)}
                   onDeleteValue={(v) => deleteValue(selectedUniversal, v, true)}
                   onReorderValues={(values) => reorderValues(selectedUniversal.id, values, true)}
+                  onRenameValue={(v, t) => renameValue(selectedUniversal.id, v, t, true)}
                   onCopyValues={(fromId) => copyValuesInto(selectedUniversal.id, fromId, true)}
                   onDelete={() => deleteAttributeEntirely(selectedUniversal.id, true)}
                 />
@@ -1010,6 +1155,10 @@ export default function Admin() {
                       <input type="checkbox" checked={!!selectedItem.can_have_nearby} onChange={(e) => setFlag("can_have_nearby", e.target.checked)} />
                       "פריטים נוספים בסמוך?"
                     </label>
+                    <label className="flag-chip">
+                      <input type="checkbox" checked={!!selectedItem.is_common_container} onChange={(e) => setFlag("is_common_container", e.target.checked)} />
+                      מופיע ברשימה "בתוך מה היה?"
+                    </label>
                   </div>
                 </div>
 
@@ -1026,6 +1175,7 @@ export default function Admin() {
                     onAddValue={(v) => addValue(a.id, v, false)}
                     onDeleteValue={(v) => deleteValue(a, v, false)}
                     onReorderValues={(values) => reorderValues(a.id, values, false)}
+                    onRenameValue={(v, t) => renameValue(a.id, v, t, false)}
                     onCopyValues={(fromId) => copyValuesInto(a.id, fromId, false)}
                     onDelete={() => removeItemAttribute(a)}
                   />
