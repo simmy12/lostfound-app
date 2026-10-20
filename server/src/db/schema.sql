@@ -85,6 +85,7 @@ CREATE TABLE reports (
   other_item_text TEXT, -- mandatory free text typed when item_id is the "אחר" placeholder — queues the report for admin review
   contact_name   TEXT,
   contact_phone  TEXT,
+  contact_phone2 TEXT,           -- optional second phone
   contact_email  TEXT,
   created_at     TIMESTAMPTZ NOT NULL DEFAULT now()
 );

@@ -186,6 +186,15 @@ function flattenAnswers(answers) {
   return out;
 }
 
+// Israeli phone number: mobile/07x numbers have 10 digits, landlines (02/03/04/08/09) have 9.
+// Spaces, dashes and a +972 prefix are accepted. Empty counts as valid (the field is optional).
+function isValidPhone(text) {
+  const digits = (text || "").replace(/[\s\-()]/g, "").replace(/^\+972/, "0");
+  if (!digits) return true;
+  if (/^0[57]\d{8}$/.test(digits)) return true;
+  return /^0[23489]\d{7}$/.test(digits);
+}
+
 // "אחר" is only a real answer once free text backs it up — used to gate the "המשך" buttons so a
 // half-picked "אחר" (chosen but not typed) can't silently vanish (flattenAnswers would just drop it).
 function isOtherIncomplete(v) {
@@ -426,7 +435,7 @@ function SubReportPicker({ categories, label, onChange, onRemove, containerMode,
         )}
 
         {item && containerMode && (
-          <p className="info-note">התכונות הבאות מתארות את ה{item.name}:</p>
+          <p className="attrs-intro">התכונות הבאות מתארות את ה{item.name}:</p>
         )}
         {item && itemAttrs.map((attr, i) => (
           <div className="q-block" key={attr.id}>
@@ -440,7 +449,7 @@ function SubReportPicker({ categories, label, onChange, onRemove, containerMode,
           <div style={{ border: "1px dashed var(--border)", borderRadius: 8, padding: 10, marginTop: 10 }}>
             <div className="q-block">
               <div className="q-label">תכולת ה{itemMeta.name || item.name}:</div>
-              <div className="sum-row"><span className="sum-k">1.</span><span>{originalItemName} (הפריט המקורי)</span></div>
+              <div className="nested-orig">1. {originalItemName} (הפריט המקורי)</div>
             </div>
             <LinkedItemsList
               title="פריט"
@@ -532,7 +541,7 @@ export default function CitizenWizard() {
   const [answers, setAnswers] = useState({}); // attribute_id -> value (item + universal together)
   const [otherItemText, setOtherItemText] = useState(""); // mandatory when itemMeta.is_other_placeholder
   const [freeText, setFreeText] = useState(""); // "תיאור נוסף/הערה" — one combined field
-  const [contact, setContact] = useState({ contact_name: "", contact_phone: "", contact_email: "" });
+  const [contact, setContact] = useState({ contact_name: "", contact_phone: "", contact_phone2: "", contact_email: "" });
   const [submitted, setSubmitted] = useState(null);
   const [showErrors, setShowErrors] = useState(false);
 
@@ -610,7 +619,7 @@ export default function CitizenWizard() {
           <div className="card-h">הדיווח נשלח בהצלחה</div>
           <div className="card-b">
             <p>מספר דיווח: <b>#{submitted}</b></p>
-            <p className="info-note">נציגה תבדוק את הדיווח ותנסה למצוא התאמות. תישלח עדכון לפרטי הקשר שסיפקת.</p>
+            <p className="info-note">נציגינו יטפלו בפנייה בהקדם. עדכון יישלח לפרטי ההתקשרות שסיפקת.</p>
           </div>
         </div>
       </div>
@@ -793,9 +802,27 @@ export default function CitizenWizard() {
           <div className="card">
             <div className="card-h">פרטי קשר</div>
             <div className="card-b">
-              <div className="row">
-                <div className="col"><label>שם מלא</label><input type="text" value={contact.contact_name} onChange={(e) => setContact({ ...contact, contact_name: e.target.value })} /></div>
-                <div className="col"><label>טלפון</label><input type="text" value={contact.contact_phone} onChange={(e) => setContact({ ...contact, contact_phone: e.target.value })} /></div>
+              <label>שם מלא</label>
+              <input type="text" value={contact.contact_name} onChange={(e) => setContact({ ...contact, contact_name: e.target.value })} />
+              <div className="row" style={{ marginTop: 10 }}>
+                {[["contact_phone", "טלפון"], ["contact_phone2", "טלפון נוסף"]].map(([key, label]) => {
+                  const bad = showErrors && !isValidPhone(contact[key]);
+                  return (
+                    <div className="col" key={key}>
+                      <label>{label}</label>
+                      <input
+                        type="tel"
+                        dir="ltr"
+                        inputMode="tel"
+                        placeholder="050-1234567"
+                        className={bad ? "input-err" : undefined}
+                        value={contact[key]}
+                        onChange={(e) => setContact({ ...contact, [key]: e.target.value })}
+                      />
+                      {bad && <div className="q-err-msg">מספר טלפון לא תקין</div>}
+                    </div>
+                  );
+                })}
               </div>
               <label>אימייל</label>
               <input type="email" value={contact.contact_email} onChange={(e) => setContact({ ...contact, contact_email: e.target.value })} />
@@ -803,11 +830,15 @@ export default function CitizenWizard() {
           </div>
 
           <div className="form-actions">
-            <button className="btn" onClick={() => setStep(2)}>→ חזרה</button>
+            <button className="btn" onClick={() => goTo(2)}>→ חזרה</button>
             <button
               className="btn btn-pr btn-lg"
               disabled={step1Incomplete || step2Incomplete || (itemMeta?.is_other_placeholder && !otherItemText.trim())}
-              onClick={submit}
+              onClick={() => {
+                if (isValidPhone(contact.contact_phone) && isValidPhone(contact.contact_phone2)) return submit();
+                setShowErrors(true);
+                setTimeout(() => document.querySelector(".input-err")?.scrollIntoView({ behavior: "smooth", block: "center" }), 0);
+              }}
             >
               ✓ שלח דיווח
             </button>

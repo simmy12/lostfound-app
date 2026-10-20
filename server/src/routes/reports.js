@@ -18,7 +18,7 @@ function parseId(req, res, name = "id") {
 
 // ---- create ----
 // Payload:
-// { type, item_id, free_text, contact_name, contact_phone, contact_email,
+// { type, item_id, free_text, contact_name, contact_phone, contact_phone2, contact_email,
 //   item_answers: [{attribute_id, value_id?|free_text?}, ...],   // this item's own questions
 //   universal_answers: [...],                                    // location/date, main report only
 //   contents:  [{ item_id, item_answers }, ...],   // up to 4 — "what was inside" (this item is a container)
@@ -38,6 +38,7 @@ router.post("/reports", asyncHandler(async (req, res) => {
     other_item_text,
     contact_name,
     contact_phone,
+    contact_phone2,
     contact_email,
     item_answers = [],
     universal_answers = [],
@@ -62,9 +63,9 @@ router.post("/reports", asyncHandler(async (req, res) => {
 
     async function insertReport(itemId, answers, otherItemText) {
       const r = await client.query(
-        `INSERT INTO reports (type, item_id, free_text, note, other_item_text, contact_name, contact_phone, contact_email)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`,
-        [type, itemId, free_text || null, note || null, otherItemText || null, contact_name || null, contact_phone || null, contact_email || null]
+        `INSERT INTO reports (type, item_id, free_text, note, other_item_text, contact_name, contact_phone, contact_phone2, contact_email)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id`,
+        [type, itemId, free_text || null, note || null, otherItemText || null, contact_name || null, contact_phone || null, contact_phone2 || null, contact_email || null]
       );
       const reportId = r.rows[0].id;
       const allAnswers = [...answers, ...universal_answers];

@@ -69,11 +69,12 @@ function ReportDetail({ r }) {
           <span>{[r.free_text, r.note].filter(Boolean).join(" · ")}</span>
         </div>
       )}
-      {(r.contact_name || r.contact_phone || r.contact_email) && (
+      {(r.contact_name || r.contact_phone || r.contact_phone2 || r.contact_email) && (
         <>
           <div className="divider" />
           {r.contact_name && <div className="sum-row"><span className="sum-k">שם</span><span>{r.contact_name}</span></div>}
-          {r.contact_phone && <div className="sum-row"><span className="sum-k">טלפון</span><span>{r.contact_phone}</span></div>}
+          {r.contact_phone && <div className="sum-row"><span className="sum-k">טלפון</span><span dir="ltr">{r.contact_phone}</span></div>}
+          {r.contact_phone2 && <div className="sum-row"><span className="sum-k">טלפון נוסף</span><span dir="ltr">{r.contact_phone2}</span></div>}
           {r.contact_email && <div className="sum-row"><span className="sum-k">אימייל</span><span>{r.contact_email}</span></div>}
         </>
       )}
