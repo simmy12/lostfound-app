@@ -47,6 +47,8 @@ export const api = {
     req(`/admin/universal-attributes/${attrId}`, { method: "PUT", body: JSON.stringify({ required }) }),
   adminAddValue: (attrId, value) =>
     req(`/admin/attributes/${attrId}/values`, { method: "POST", body: JSON.stringify({ value }) }),
+  adminSetAttributeType: (attrId, inputType, maxSelect) =>
+    req(`/admin/attributes/${attrId}/type`, { method: "PUT", body: JSON.stringify({ input_type: inputType, max_select: maxSelect }) }),
   adminCopyValues: (attrId, fromAttrId) =>
     req(`/admin/attributes/${attrId}/values/copy`, { method: "POST", body: JSON.stringify({ from_attribute_id: fromAttrId }) }),
   adminReorderValues: (attrId, valueIds) =>

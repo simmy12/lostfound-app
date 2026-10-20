@@ -41,6 +41,7 @@ CREATE TABLE attributes (
   name       TEXT NOT NULL,  -- not unique: e.g. many items each have their own "צבע"
   input_type TEXT NOT NULL DEFAULT 'single' CHECK (input_type IN ('single','multi','text','number','boolean')),
   scope      TEXT NOT NULL DEFAULT 'item' CHECK (scope IN ('item','universal')),
+  max_select INTEGER NOT NULL DEFAULT 2, -- how many answers a 'multi' question allows
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 

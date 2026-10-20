@@ -184,9 +184,9 @@ textarea{resize:vertical;min-height:72px;line-height:1.5}
 
 .q-card{border:1px solid var(--border);border-radius:var(--r);margin-bottom:10px;overflow:hidden;transition:box-shadow .12s}
 .q-card:hover{box-shadow:0 2px 10px rgba(0,0,0,.06)}
-.q-card-top{display:flex;align-items:center;gap:10px;padding:12px 14px;background:#fafbfc;border-bottom:1px solid var(--border);flex-wrap:wrap}
+.q-card-top{display:flex;align-items:center;gap:10px;padding:12px 14px;background:var(--pr-l);border-bottom:1px solid var(--pr-b);flex-wrap:wrap}
 .q-card-name-wrap{display:flex;align-items:center;gap:6px;flex:1;min-width:140px}
-.q-card-name{font-size:14px;font-weight:600;color:var(--text);background:transparent;border:1px solid transparent;border-radius:var(--r);padding:4px 7px;width:auto;flex:1;min-width:100px}
+.q-card-name{font-size:18px;font-weight:800;color:var(--text);background:transparent;border:1px solid transparent;border-radius:var(--r);padding:4px 7px;width:auto;flex:1;min-width:100px}
 .q-card-name:hover{border-color:var(--border2);background:var(--white)}
 .q-card-name:focus{border-color:var(--pr);background:var(--white);box-shadow:0 0 0 3px var(--pr-l)}
 .q-card-actions{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
@@ -194,7 +194,7 @@ textarea{resize:vertical;min-height:72px;line-height:1.5}
 
 .req-toggle{display:flex;align-items:center;gap:5px;font-size:12px;font-weight:600;color:var(--text2);cursor:pointer;padding:5px 9px;border-radius:999px;border:1px solid var(--border2);transition:all .12s}
 .req-toggle input{width:auto;margin:0}
-.req-toggle.on{background:var(--wa-l);color:#92400e;border-color:var(--wa-b)}
+.req-toggle.on{background:var(--white);color:var(--pr);border-color:var(--pr)}
 
 .chip-row{display:flex;flex-wrap:wrap;gap:7px;margin-bottom:9px}
 .chip-add-row{display:flex;gap:7px}
@@ -208,3 +208,12 @@ textarea{resize:vertical;min-height:72px;line-height:1.5}
 .opt-search{margin-bottom:8px}
 .attrs-intro{font-size:14px;font-weight:700;color:var(--text);margin:10px 0 6px}
 .nested-orig{padding:6px 0;font-size:13px;border-bottom:1px solid var(--border)}
+.btn-soft{background:var(--white);color:var(--pr);border-color:var(--pr-b)}
+.btn-soft:hover{background:var(--pr-l)}
+.q-card{border-width:2px}
+/* question cards: beat the generic input[type=...] rule (higher specificity) */
+.q-card input.q-card-name{font-size:18px;font-weight:800;flex:1 1 220px;width:auto;min-width:160px;background:transparent;border-color:transparent}
+.q-card input.q-card-name:hover{border-color:var(--border2);background:var(--white)}
+.q-card input.q-card-name:focus{border-color:var(--pr);background:var(--white)}
+.q-card input.score-pill{width:64px;flex:0 0 64px;padding:5px 6px;border-radius:999px;font-size:12px;text-align:center}
+.q-card .q-card-name-wrap{min-width:auto;flex-wrap:wrap}

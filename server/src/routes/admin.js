@@ -44,11 +44,19 @@ router.put("/admin/attributes/:id/name", asyncHandler(async (req, res) => {
 // Every item has its own, independent copy of each question it asks — editing "חברה" on one item
 // never touches "חברה" on another. These helpers create/copy a question and attach it to one item.
 
-async function createAttribute(db, { name, input_type, scope, values }) {
-  const r = await db.query(`INSERT INTO attributes (name, input_type, scope) VALUES ($1, $2, $3) RETURNING id`, [name, input_type, scope]);
+// "אחר" is never a regular answer — it's the automatic free-text option each question turns on
+// or off with its "אפשר אחר" checkbox
+const isOtherText = (v) => String(v).trim().startsWith("אחר");
+
+async function createAttribute(db, { name, input_type, scope, values, max_select = 2 }) {
+  const r = await db.query(
+    `INSERT INTO attributes (name, input_type, scope, max_select) VALUES ($1, $2, $3, $4) RETURNING id`,
+    [name, input_type, scope, max_select]
+  );
   const id = r.rows[0].id;
-  for (let i = 0; i < values.length; i++) {
-    await db.query(`INSERT INTO attribute_values (attribute_id, value, display_order) VALUES ($1,$2,$3)`, [id, values[i], i]);
+  const clean = values.filter((v) => !isOtherText(v));
+  for (let i = 0; i < clean.length; i++) {
+    await db.query(`INSERT INTO attribute_values (attribute_id, value, display_order) VALUES ($1,$2,$3)`, [id, clean[i], i]);
   }
   return id;
 }
@@ -64,7 +72,7 @@ async function linkToItem(db, attributeId, itemId) {
 
 // a fresh copy of an existing question (name, type, visible values in their order)
 async function copyAttribute(db, sourceId) {
-  const a = await db.query(`SELECT name, input_type FROM attributes WHERE id = $1`, [sourceId]);
+  const a = await db.query(`SELECT name, input_type, max_select FROM attributes WHERE id = $1`, [sourceId]);
   if (!a.rows.length) return null;
   const v = await db.query(
     `SELECT value FROM attribute_values WHERE attribute_id = $1 AND NOT hidden ORDER BY display_order`,
@@ -121,14 +129,14 @@ router.post("/admin/attributes/:id/items", asyncHandler(async (req, res) => {
 // create a brand-new question, either as a base question asked on every report, or for one or
 // more items (item_id / item_ids) — each item getting its own independent copy
 router.post("/admin/attributes", asyncHandler(async (req, res) => {
-  const { name, input_type = "single", values = [], item_id, universal } = req.body;
+  const { name, input_type = "single", values = [], item_id, universal, max_select } = req.body;
   const itemIds = req.body.item_ids || (item_id ? [item_id] : []);
   if (!name) return res.status(400).json({ error: "name is required" });
   if (!itemIds.length && !universal) return res.status(400).json({ error: "item_id(s) or universal is required" });
 
   const id = await inTransaction(async (db) => {
     if (universal) {
-      const attributeId = await createAttribute(db, { name, input_type, scope: "universal", values });
+      const attributeId = await createAttribute(db, { name, input_type, scope: "universal", values, max_select });
       await db.query(
         `INSERT INTO universal_attributes (attribute_id, display_order)
          VALUES ($1, (SELECT COALESCE(MAX(display_order)+1,0) FROM universal_attributes))`,
@@ -138,7 +146,7 @@ router.post("/admin/attributes", asyncHandler(async (req, res) => {
     }
     let first = null;
     for (const itemId of itemIds) {
-      const attributeId = await createAttribute(db, { name, input_type, scope: "item", values });
+      const attributeId = await createAttribute(db, { name, input_type, scope: "item", values, max_select });
       await linkToItem(db, attributeId, itemId);
       first ??= attributeId;
     }
@@ -178,7 +186,7 @@ router.post("/admin/attributes/:attributeId/values/copy", asyncHandler(async (re
      SELECT $1, src.value,
             (SELECT COALESCE(MAX(display_order), -1) FROM attribute_values WHERE attribute_id = $1) + src.n
      FROM (SELECT value, ROW_NUMBER() OVER (ORDER BY display_order) AS n
-           FROM attribute_values WHERE attribute_id = $2 AND NOT hidden) src
+           FROM attribute_values WHERE attribute_id = $2 AND NOT hidden AND value NOT LIKE 'אחר%') src
      ON CONFLICT (attribute_id, value) DO UPDATE SET hidden = false WHERE attribute_values.hidden
      RETURNING id`,
     [req.params.attributeId, from_attribute_id]
@@ -186,10 +194,28 @@ router.post("/admin/attributes/:attributeId/values/copy", asyncHandler(async (re
   res.json({ ok: true, count: r.rowCount });
 }));
 
+const INPUT_TYPES = ["single", "multi", "text", "number"];
+
+router.put("/admin/attributes/:id/type", asyncHandler(async (req, res) => {
+  const { input_type, max_select } = req.body;
+  if (!INPUT_TYPES.includes(input_type)) return res.status(400).json({ error: "invalid input_type" });
+  const max = Number(max_select);
+  if (input_type === "multi" && !(Number.isInteger(max) && max >= 2)) {
+    return res.status(400).json({ error: "max_select must be a whole number of at least 2" });
+  }
+  const r = await pool.query(
+    `UPDATE attributes SET input_type = $1, max_select = COALESCE($2, max_select) WHERE id = $3 RETURNING id`,
+    [input_type, input_type === "multi" ? max : null, req.params.id]
+  );
+  if (!r.rows.length) return res.status(404).json({ error: "not found" });
+  res.json({ ok: true });
+}));
+
 // add a selectable value to an attribute
 router.post("/admin/attributes/:attributeId/values", asyncHandler(async (req, res) => {
   const { value } = req.body;
   if (!value) return res.status(400).json({ error: "value is required" });
+  if (isOtherText(value)) return res.status(400).json({ error: "\"אחר\" אינו תשובה רגילה — יש לסמן \"אפשר אחר\" בשאלה" });
   const r = await pool.query(
     `INSERT INTO attribute_values (attribute_id, value, display_order)
      VALUES ($1, $2, (SELECT COALESCE(MAX(display_order)+1,0) FROM attribute_values WHERE attribute_id = $1))
@@ -239,7 +265,7 @@ router.get("/admin/items", asyncHandler(async (req, res) => {
 // one item's questions for the admin editor — like the public endpoint, plus allow_other
 router.get("/admin/items/:itemId/attributes", asyncHandler(async (req, res) => {
   const r = await pool.query(
-    `SELECT a.id, a.name, a.input_type, ia.display_order, ia.weight, ia.required, ia.allow_other
+    `SELECT a.id, a.name, a.input_type, a.max_select, ia.display_order, ia.weight, ia.required, ia.allow_other
      FROM item_attributes ia JOIN attributes a ON a.id = ia.attribute_id
      WHERE ia.item_id = $1 ORDER BY ia.display_order`,
     [req.params.itemId]
@@ -260,7 +286,7 @@ router.get("/admin/items/:itemId/attributes", asyncHandler(async (req, res) => {
 
 router.get("/admin/universal-attributes", asyncHandler(async (req, res) => {
   const r = await pool.query(
-    `SELECT a.id, a.name, a.input_type, ua.weight, ua.display_order, ua.required, ua.allow_other
+    `SELECT a.id, a.name, a.input_type, a.max_select, ua.weight, ua.display_order, ua.required, ua.allow_other
      FROM universal_attributes ua JOIN attributes a ON a.id = ua.attribute_id
      ORDER BY ua.display_order`
   );
@@ -368,6 +394,7 @@ router.get("/admin/other-answers", asyncHandler(async (req, res) => {
 router.post("/admin/other-answers/promote", asyncHandler(async (req, res) => {
   const { attribute_id, text, retroactive } = req.body;
   if (!attribute_id || !text) return res.status(400).json({ error: "attribute_id and text are required" });
+  if (isOtherText(text)) return res.status(400).json({ error: "\"אחר\" אינו תשובה רגילה" });
 
   const client = await pool.connect();
   try {

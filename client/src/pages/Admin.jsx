@@ -2,6 +2,34 @@ import { useEffect, useRef, useState } from "react";
 import { api } from "../api";
 
 const INPUT_TYPE_LABEL = { single: "בחירה אחת", multi: "בחירה מרובה", text: "טקסט חופשי", number: "מספר" };
+const OTHER_VALUE_MSG = 'אין צורך להוסיף "אחר" כתשובה. כדי לאפשר למשתמש לבחור "אחר" ולפרט, סמנו את התיבה "אפשר אחר" בשאלה.';
+const startsWithOther = (v) => v.trim().startsWith("אחר");
+
+// question type select + (for multiple choice) the max number of answers; used when creating a
+// question and when editing one
+function TypePicker({ type, max, onChange }) {
+  return (
+    <div style={{ display: "flex", gap: 6, alignItems: "center", flexShrink: 0 }}>
+      <select value={type} onChange={(e) => onChange(e.target.value, max || 2)} style={{ width: "auto" }} title="סוג השאלה">
+        {Object.entries(INPUT_TYPE_LABEL).map(([k, label]) => <option key={k} value={k}>{label}</option>)}
+      </select>
+      {type === "multi" && (
+        <label style={{ display: "inline-flex", alignItems: "center", gap: 4, margin: 0, whiteSpace: "nowrap", fontSize: 13, width: "auto", flexShrink: 0 }}>
+          עד
+          <input
+            type="number"
+            min={2}
+            value={max || 2}
+            onChange={(e) => onChange(type, Math.max(2, Number(e.target.value) || 2))}
+            style={{ width: 60 }}
+            title="כמה תשובות אפשר לבחור לכל היותר"
+          />
+          תשובות
+        </label>
+      )}
+    </div>
+  );
+}
 
 function OtherAnswersPanel() {
   const [rows, setRows] = useState([]);
@@ -282,6 +310,7 @@ function NewAttributeForm({ onSubmit, allowExisting, alwaysOpen, submitLabel = "
   const [existingId, setExistingId] = useState(null);
   const [name, setName] = useState("");
   const [inputType, setInputType] = useState("single");
+  const [maxSelect, setMaxSelect] = useState(2);
   const [valuesText, setValuesText] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -299,7 +328,7 @@ function NewAttributeForm({ onSubmit, allowExisting, alwaysOpen, submitLabel = "
         await onSubmit({ existingId });
       } else {
         const values = inputType === "single" || inputType === "multi" ? parseValuesInput(valuesText) : [];
-        await onSubmit({ payload: { name: name.trim(), input_type: inputType, values } });
+        await onSubmit({ payload: { name: name.trim(), input_type: inputType, max_select: maxSelect, values: values.filter((v) => !startsWithOther(v)) } });
       }
       setName("");
       setValuesText("");
@@ -343,19 +372,14 @@ function NewAttributeForm({ onSubmit, allowExisting, alwaysOpen, submitLabel = "
             <label>שם השאלה</label>
             <input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="לדוגמה: חברה" autoFocus />
           </div>
-          <div className="col" style={{ flex: "0 0 150px" }}>
+          <div className="col" style={{ flex: "0 0 auto" }}>
             <label>סוג</label>
-            <select value={inputType} onChange={(e) => setInputType(e.target.value)}>
-              <option value="single">בחירה אחת</option>
-              <option value="multi">בחירה מרובה</option>
-              <option value="text">טקסט חופשי</option>
-              <option value="number">מספר</option>
-            </select>
+            <TypePicker type={inputType} max={maxSelect} onChange={(t, m) => { setInputType(t); setMaxSelect(m); }} />
           </div>
         </div>
         {(inputType === "single" || inputType === "multi") && (
           <div style={{ marginBottom: 10 }}>
-            <label>רשימת ערכים (אחד בכל שורה)</label>
+            <label>רשימת ערכים (אחד בכל שורה). את "אחר" לא צריך להוסיף, הוא נקבע בתיבה "אפשר אחר".</label>
             <textarea value={valuesText} onChange={(e) => setValuesText(e.target.value)} placeholder={"אדום\nכחול\nירוק"} />
           </div>
         )}
@@ -374,7 +398,7 @@ function NewAttributeForm({ onSubmit, allowExisting, alwaysOpen, submitLabel = "
 // One question's full editor card: rename, required toggle, weight, and — for choice-type
 // questions — its answer options. Shared by item-specific and universal (base) questions, so
 // both get exactly the same editing power.
-function QuestionCard({ attr, onRename, onSetWeight, onSetRequired, onSetAllowOther, onAddValue, onDeleteValue, onReorderValues, onCopyValues, onDelete }) {
+function QuestionCard({ attr, onRename, onSetType, onSetWeight, onSetRequired, onSetAllowOther, onAddValue, onDeleteValue, onReorderValues, onCopyValues, onDelete }) {
   const [name, setName] = useState(attr.name);
   const [newValue, setNewValue] = useState("");
   const [nameStatus, setNameStatus] = useState(null); // null | "saving" | "saved" | error text
@@ -403,6 +427,7 @@ function QuestionCard({ attr, onRename, onSetWeight, onSetRequired, onSetAllowOt
 
   async function addValue() {
     if (!newValue.trim()) return;
+    if (startsWithOther(newValue)) return window.alert(OTHER_VALUE_MSG);
     await onAddValue(newValue.trim());
     setNewValue("");
   }
@@ -502,7 +527,7 @@ function QuestionCard({ attr, onRename, onSetWeight, onSetRequired, onSetAllowOt
           {nameStatus && nameStatus !== "saving" && nameStatus !== "saved" && (
             <span className="muted" style={{ color: "var(--da)" }}>השמירה נכשלה</span>
           )}
-          <span className="badge badge-gray">{INPUT_TYPE_LABEL[attr.input_type] || attr.input_type}</span>
+          <TypePicker type={attr.input_type} max={attr.max_select} onChange={onSetType} />
         </div>
         <div className="q-card-actions">
           <label className={"req-toggle" + (attr.required ? " on" : "")}>
@@ -522,7 +547,7 @@ function QuestionCard({ attr, onRename, onSetWeight, onSetRequired, onSetAllowOt
             value={attr.weight}
             onChange={(e) => onSetWeight(Number(e.target.value))}
           />
-          <button className="btn btn-sm btn-da" onClick={onDelete}>מחק שאלה</button>
+          <button className="btn btn-sm btn-soft" onClick={onDelete}>מחק שאלה</button>
         </div>
       </div>
       {isChoice && (
@@ -740,6 +765,17 @@ export default function Admin() {
     else setAttrs((prev) => prev.map(patch));
   }
 
+  async function setType(attrId, input_type, max_select, fromUniversal) {
+    try {
+      await api.adminSetAttributeType(attrId, input_type, max_select);
+    } catch {
+      return window.alert("שמירת הסוג נכשלה, נסו שוב.");
+    }
+    const patch = (a) => (a.id === attrId ? { ...a, input_type, max_select } : a);
+    if (fromUniversal) setUniversal((prev) => prev.map(patch));
+    else setAttrs((prev) => prev.map(patch));
+  }
+
   async function setAllowOther(attrId, allow_other) {
     await api.adminSetItemAttrAllowOther(selectedItem.id, attrId, allow_other);
     setAttrs((prev) => prev.map((a) => (a.id === attrId ? { ...a, allow_other } : a)));
@@ -937,6 +973,7 @@ export default function Admin() {
                   onSetWeight={(w) => setUniversalWeight(selectedUniversal.id, w)}
                   onSetRequired={(r) => setUniversalRequired(selectedUniversal.id, r)}
                   onSetAllowOther={(on) => setUniversalAllowOther(selectedUniversal.id, on)}
+                  onSetType={(t, m) => setType(selectedUniversal.id, t, m, true)}
                   onAddValue={(v) => addValue(selectedUniversal.id, v, true)}
                   onDeleteValue={(v) => deleteValue(selectedUniversal, v, true)}
                   onReorderValues={(values) => reorderValues(selectedUniversal.id, values, true)}
@@ -985,6 +1022,7 @@ export default function Admin() {
                     onSetWeight={(w) => setWeight(a.id, w)}
                     onSetRequired={(r) => setRequired(a.id, r)}
                     onSetAllowOther={(on) => setAllowOther(a.id, on)}
+                    onSetType={(t, m) => setType(a.id, t, m, false)}
                     onAddValue={(v) => addValue(a.id, v, false)}
                     onDeleteValue={(v) => deleteValue(a, v, false)}
                     onReorderValues={(values) => reorderValues(a.id, values, false)}

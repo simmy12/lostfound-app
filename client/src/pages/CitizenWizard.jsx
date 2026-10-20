@@ -8,34 +8,38 @@ const MAX_LINKED = 4;
 // "what was inside it?" — once the reporter answers yes, at least MIN_CONTENTS items are required
 const MAX_CONTENTS = 5;
 const MIN_CONTENTS = 2;
-const MULTI_SELECT_CAP = 2;
 const VALUE_SEARCH_MIN = 12; // from this many answer options, offer a search box above them
 
 // true once the reporter pressed "המשך" on a step that still has missing fields — from then on
 // every unfilled "אחר" text box and unanswered required question on that step gets a red frame
 const ShowErrors = createContext(false);
 
+// the question type drives the answer widget: single/multi are choice lists (multi allows up to
+// max_select picks), text/number are typed in — whatever values a text question may still carry
+const isChoice = (attr) => (attr.input_type === "single" || attr.input_type === "multi") && attr.values?.length > 0;
+const maxPicks = (attr) => (attr.input_type === "multi" ? attr.max_select || 2 : 1);
+
 function attrLabel(attr) {
-  if (attr.name === "צבע") return "צבע עיקרי (עד 2 צבעים לבחירה)";
+  if (isChoice(attr) && maxPicks(attr) > 1) return `${attr.name} (ניתן לבחור עד ${maxPicks(attr)})`;
   return attr.name;
 }
 
 // a plain yes/no gate (exactly "כן" and "לא") stays a strict single choice — picking both at
-// once wouldn't mean anything. Every other choice-list question allows up to MULTI_SELECT_CAP.
+// once wouldn't mean anything, whatever the question type says.
 function isYesNo(attr) {
   const vals = attr.values?.map((v) => v.value) || [];
   return vals.length === 2 && vals.includes("כן") && vals.includes("לא");
 }
 
 // value shapes stored in an `answers` map (attribute_id -> value):
-//   choice (up to 2): { attribute_id, value_ids: [...] (max 2), isOther?, free_text? }
+//   choice:           { attribute_id, value_ids: [...] (max maxPicks), isOther?, free_text? }
 //   strict yes/no:    { attribute_id, value_id? , isOther?, free_text? }
 //   text/number/date: { attribute_id, free_text }
 function AttributeField({ attr, value, onChange }) {
   const showErrors = useContext(ShowErrors);
   const [search, setSearch] = useState("");
   const otherCls = showErrors && !(value?.free_text || "").trim() ? "input-err" : undefined;
-  if (attr.values?.length && isYesNo(attr)) {
+  if (isChoice(attr) && isYesNo(attr)) {
     const isOther = !!value?.isOther;
     return (
       <div>
@@ -72,10 +76,12 @@ function AttributeField({ attr, value, onChange }) {
       </div>
     );
   }
-  if (attr.values?.length) {
+  if (isChoice(attr)) {
     const selected = value?.value_ids || [];
     const isOther = !!value?.isOther;
-    const atCap = selected.length + (isOther ? 1 : 0) >= MULTI_SELECT_CAP;
+    const cap = maxPicks(attr);
+    // single choice: a new pick replaces the old one; multi: picks stop at the cap
+    const atCap = cap > 1 && selected.length + (isOther ? 1 : 0) >= cap;
     const searchable = attr.values.length >= VALUE_SEARCH_MIN;
     const q = search.trim();
     // already-picked answers stay visible while searching, so they can still be un-picked
@@ -97,6 +103,7 @@ function AttributeField({ attr, value, onChange }) {
                 disabled={disabled}
                 className={"opt-btn" + (isSel ? " sel" : "")}
                 onClick={() => {
+                  if (cap === 1) return onChange({ attribute_id: attr.id, value_ids: isSel ? [] : [v.id] });
                   const next = isSel ? selected.filter((id) => id !== v.id) : [...selected, v.id];
                   onChange({ attribute_id: attr.id, value_ids: next, isOther, free_text: value?.free_text });
                 }}
@@ -110,7 +117,7 @@ function AttributeField({ attr, value, onChange }) {
               type="button"
               disabled={!isOther && atCap}
               className={"opt-btn" + (isOther ? " sel" : "")}
-              onClick={() => onChange({ attribute_id: attr.id, value_ids: selected, isOther: !isOther, free_text: value?.free_text })}
+              onClick={() => onChange({ attribute_id: attr.id, value_ids: cap === 1 ? [] : selected, isOther: !isOther, free_text: value?.free_text })}
             >
               אחר
             </button>
@@ -204,7 +211,7 @@ function isOtherIncomplete(v) {
 // whether `value` counts as a real answer to `attr` — used to enforce admin-marked required questions
 function isAnswered(attr, value) {
   if (!value) return false;
-  if (attr.values?.length) {
+  if (isChoice(attr)) {
     if (value.value_id != null) return true; // strict yes/no gate
     if (value.value_ids?.length) return true; // choice, up to 2
     return !!value.isOther && !!(value.free_text || "").trim();
