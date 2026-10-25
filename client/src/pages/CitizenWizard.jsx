@@ -770,7 +770,7 @@ export default function CitizenWizard({ repMode = false }) {
               <div className="sum-row"><span className="sum-k">סוג</span><span>{type === "lost" ? "אבדה" : "מציאה"}</span></div>
               {itemAttrs.map((attr) => answers[attr.id] && (
                 <div className="sum-row" key={attr.id}>
-                  <span className="sum-k">{attrLabel(attr)}</span>
+                  <span className="sum-k">{attr.name}</span>
                   <span>
                     {answers[attr.id].isOther
                       ? answers[attr.id].free_text
