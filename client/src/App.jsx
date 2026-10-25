@@ -13,7 +13,7 @@ const ROLES = [
 function Nav() {
   const navigate = useNavigate();
   const location = useLocation();
-  const current = ROLES.find((r) => r.path === location.pathname) || ROLES[0];
+  const current = ROLES.find((r) => r.path !== "/" && location.pathname.startsWith(r.path)) || ROLES[0];
   return (
     <div className="top-nav">
       <div className="top-nav-title">🔍 השבת אבידה</div>
@@ -39,6 +39,7 @@ export default function App() {
       <Routes>
         <Route path="/" element={<CitizenWizard />} />
         <Route path="/rep" element={<RepSearch />} />
+        <Route path="/rep/new" element={<CitizenWizard repMode />} />
         <Route path="/admin" element={<Admin />} />
         <Route path="*" element={<Navigate to="/" />} />
       </Routes>

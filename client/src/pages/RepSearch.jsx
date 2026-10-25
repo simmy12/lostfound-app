@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { api } from "../api";
 import { formatAnswerValue } from "../format";
 
@@ -84,7 +85,9 @@ function ReportDetail({ r }) {
 }
 
 export default function RepSearch() {
-  const [baseType, setBaseType] = useState("lost");
+  const navigate = useNavigate();
+  const [params, setParams] = useSearchParams();
+  const [baseType, setBaseType] = useState(params.get("type") === "found" ? "found" : "lost");
   const [q, setQ] = useState("");
   const [status, setStatus] = useState("open");
   const [results, setResults] = useState([]);
@@ -103,7 +106,15 @@ export default function RepSearch() {
     const r = await api.searchReports(params);
     setResults(r);
   }
-  useEffect(() => { search(); }, []);
+  useEffect(() => {
+    search();
+    // arriving right after a rep sent a phone report: select it so its matches show straight away
+    const reportId = Number(params.get("report"));
+    if (reportId) {
+      selectBase({ id: reportId });
+      setParams({}, { replace: true });
+    }
+  }, []);
 
   function switchSide(type) {
     setBaseType(type);
@@ -162,7 +173,10 @@ export default function RepSearch() {
   return (
     <div className="page page-wide">
       <div className="card">
-        <div className="card-h">חיפוש דיווחים</div>
+        <div className="card-h" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <span>חיפוש דיווחים</span>
+          <button className="btn btn-pr" onClick={() => navigate("/rep/new")}>+ דיווח חדש (טלפוני)</button>
+        </div>
         <div className="card-b">
           <div className="row" style={{ alignItems: "flex-end" }}>
             <div className="col" style={{ flex: "0 0 220px" }}>
@@ -174,7 +188,7 @@ export default function RepSearch() {
             </div>
             <div className="col">
               <label>חיפוש חופשי</label>
-              <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="חיפוש לפי תיאור, שם פריט..." />
+              <input type="text" value={q} onChange={(e) => setQ(e.target.value)} placeholder="חיפוש לפי תיאור, שם פריט..." />
             </div>
             <div className="col">
               <label>סטטוס</label>

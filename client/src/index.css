@@ -219,3 +219,4 @@ textarea{resize:vertical;min-height:72px;line-height:1.5}
 .q-card .q-card-name-wrap{min-width:auto;flex-wrap:wrap}
 .container-row{display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid var(--border);border-radius:var(--r);background:var(--white);cursor:grab;user-select:none;touch-action:none}
 .container-row.dragging{opacity:.4;border-style:dashed}
+.rep-banner{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 14px;margin-bottom:12px;border:1px solid var(--pr-b);background:var(--pr-l);color:var(--pr);border-radius:var(--r);font-weight:600}

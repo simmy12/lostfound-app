@@ -1,4 +1,5 @@
 import { createContext, useContext, useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { api } from "../api";
 import { formatAnswerValue } from "../format";
 import { ISRAELI_CITIES } from "../cities";
@@ -519,7 +520,10 @@ function LinkedItemsList({ title, prompt, hint, items, setItems, categories, con
   );
 }
 
-export default function CitizenWizard() {
+// repMode: a rep filling the form for someone who phoned in — after sending, she lands on her
+// search/matches screen with this report selected instead of the "sent" confirmation
+export default function CitizenWizard({ repMode = false }) {
+  const navigate = useNavigate();
   const [step, setStep] = useState(0);
   const [type, setType] = useState("lost");
   const [categories, setCategories] = useState([]);
@@ -598,6 +602,7 @@ export default function CitizenWizard() {
       nearby: nearbyItems.filter((n) => n.value).map((n) => n.value),
     };
     const r = await api.createReport(payload);
+    if (repMode) return navigate(`/rep?report=${r.id}&type=${type}`);
     setSubmitted(r.id);
   }
 
@@ -618,6 +623,12 @@ export default function CitizenWizard() {
   return (
     <ShowErrors.Provider value={showErrors}>
     <div className="page page-center">
+      {repMode && (
+        <div className="rep-banner">
+          <span>📞 דיווח טלפוני — הנציגה ממלאת את הטופס עבור המתקשר/ת</span>
+          <button className="btn btn-sm" onClick={() => navigate("/rep")}>→ חזרה למסך הנציגה</button>
+        </div>
+      )}
       <datalist id="cities-datalist">
         {ISRAELI_CITIES.map((c) => <option key={c} value={c} />)}
       </datalist>
