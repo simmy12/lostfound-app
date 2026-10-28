@@ -54,6 +54,16 @@ export const api = {
   adminRenameItem: (itemId, name) => req(`/admin/items/${itemId}/name`, { method: "PUT", body: JSON.stringify({ name }) }),
   adminContainers: () => req("/admin/containers"),
   adminReorderContainers: (itemIds) => req("/admin/containers/order", { method: "PUT", body: JSON.stringify({ item_ids: itemIds }) }),
+  adminDeleteValues: (ids) => req("/admin/attribute-values/delete", { method: "POST", body: JSON.stringify({ ids }) }),
+  adminSetValueDetail: (valueId, detailKind, detailPrompt) =>
+    req(`/admin/attribute-values/${valueId}/detail`, { method: "PUT", body: JSON.stringify({ detail_kind: detailKind, detail_prompt: detailPrompt }) }),
+  adminCopyQuestions: (itemId, fromItemId, attributeIds) =>
+    req(`/admin/items/${itemId}/copy-questions`, { method: "POST", body: JSON.stringify({ from_item_id: fromItemId, attribute_ids: attributeIds }) }),
+  adminReorderQuestions: (itemId, attributeIds) =>
+    req(`/admin/items/${itemId}/question-order`, { method: "PUT", body: JSON.stringify({ attribute_ids: attributeIds }) }),
+  adminSetItemHidden: (itemId, hidden) => req(`/admin/items/${itemId}/hidden`, { method: "PUT", body: JSON.stringify({ hidden }) }),
+  adminDeleteSubcategory: (subId, moveToSubId) =>
+    req(`/admin/categories/subs/${subId}/delete`, { method: "POST", body: JSON.stringify({ move_to_sub_id: moveToSubId }) }),
   adminCopyValues: (attrId, fromAttrId) =>
     req(`/admin/attributes/${attrId}/values/copy`, { method: "POST", body: JSON.stringify({ from_attribute_id: fromAttrId }) }),
   adminReorderValues: (attrId, valueIds) =>

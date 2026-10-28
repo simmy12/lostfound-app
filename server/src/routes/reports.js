@@ -25,7 +25,9 @@ function parseId(req, res, name = "id") {
 //   container: { item_id, item_answers, contents? } | null,   // "what was it inside" (this item was
 //     // inside something) — container.contents (up to 3) are other items found in that same
 //     // container besides the main item, since it already fills one of the container's 4 slots
-//   nearby:    [{ item_id, item_answers }, ...] }  // up to 4 — items found/lost nearby
+//   nearby:    [{ item_id, item_answers }, ...],   // up to 4 — items found/lost nearby
+//   units:     [item_answers, ...] }  // multi-unit items (e.g. rings): units 2..N of the same item,
+//     // each its own report with its own description, linked to the main one like "nearby"
 //
 // contents/container/nearby each become their own independent report, sharing the main report's
 // universal (location/date) answers — asked once, applied to every report created in this submission.
@@ -45,13 +47,14 @@ router.post("/reports", asyncHandler(async (req, res) => {
     contents = [],
     container = null,
     nearby = [],
+    units = [],
   } = req.body;
 
   if (!["lost", "found"].includes(type) || !item_id) {
     return res.status(400).json({ error: "type and item_id are required" });
   }
 
-  const itemR = await pool.query(`SELECT is_other_placeholder FROM items WHERE id = $1`, [item_id]);
+  const itemR = await pool.query(`SELECT is_other_placeholder, multi_unit, max_units FROM items WHERE id = $1`, [item_id]);
   if (!itemR.rows.length) return res.status(400).json({ error: "unknown item_id" });
   if (itemR.rows[0].is_other_placeholder && !(other_item_text || "").trim()) {
     return res.status(400).json({ error: "other_item_text is required when item_id is the generic \"אחר\" item" });
@@ -107,7 +110,12 @@ router.post("/reports", asyncHandler(async (req, res) => {
       }
     }
 
-    for (const n of nearby.slice(0, MAX_LINKED)) {
+    const extraUnits = itemR.rows[0].multi_unit ? units.slice(0, itemR.rows[0].max_units - 1) : [];
+    const linked = [
+      ...extraUnits.map((answers) => ({ item_id, item_answers: answers })),
+      ...nearby.slice(0, MAX_LINKED),
+    ];
+    for (const n of linked) {
       const nearbyReportId = await insertReport(n.item_id, n.item_answers || []);
       const [a, b] = [mainReportId, nearbyReportId].sort((x, y) => x - y);
       await client.query(

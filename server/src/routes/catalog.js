@@ -28,7 +28,7 @@ router.get("/categories", asyncHandler(async (req, res) => {
 router.get("/subs/:subId/items", asyncHandler(async (req, res) => {
   const subId = parseId(req, res, "subId");
   if (subId == null) return;
-  const r = await pool.query("SELECT id, name FROM items WHERE sub_id = $1 ORDER BY (name = 'אחר'), name", [subId]);
+  const r = await pool.query("SELECT id, name FROM items WHERE sub_id = $1 AND NOT is_hidden ORDER BY (name = 'אחר'), name", [subId]);
   res.json(r.rows);
 }));
 
@@ -40,7 +40,7 @@ router.get("/items/search", asyncHandler(async (req, res) => {
   const r = await pool.query(
     `SELECT i.id, i.name, cs.name AS sub_name, cm.name AS main_name
      FROM items i JOIN categories_sub cs ON cs.id = i.sub_id JOIN categories_main cm ON cm.id = cs.main_id
-     WHERE i.name ILIKE $1
+     WHERE i.name ILIKE $1 AND NOT i.is_hidden
      ORDER BY (i.name = 'אחר'), i.name
      LIMIT 20`,
     [`%${q}%`]
@@ -51,7 +51,7 @@ router.get("/items/search", asyncHandler(async (req, res) => {
 // the curated, fixed list of "things something could be found inside" — the only options offered
 // in the "בתוך מה היה?" flow, deliberately not the full catalog.
 router.get("/items/containers", asyncHandler(async (req, res) => {
-  const r = await pool.query(`SELECT id, name FROM items WHERE is_common_container = true ORDER BY container_order, name`);
+  const r = await pool.query(`SELECT id, name FROM items WHERE is_common_container = true AND NOT is_hidden ORDER BY container_order, name`);
   res.json(r.rows);
 }));
 
@@ -59,7 +59,7 @@ router.get("/items/:itemId", asyncHandler(async (req, res) => {
   const itemId = parseId(req, res, "itemId");
   if (itemId == null) return;
   const r = await pool.query(
-    "SELECT id, name, can_be_contained, can_have_nearby, can_contain_items, is_other_placeholder FROM items WHERE id = $1",
+    "SELECT id, name, can_be_contained, can_have_nearby, can_contain_items, is_other_placeholder, multi_unit, max_units FROM items WHERE id = $1",
     [itemId]
   );
   if (!r.rows.length) return res.status(404).json({ error: "not found" });
@@ -78,14 +78,14 @@ router.get("/items/:itemId/attributes", asyncHandler(async (req, res) => {
   );
   const attrs = r.rows;
   const values = await pool.query(
-    `SELECT attribute_id, id, value FROM attribute_values
+    `SELECT attribute_id, id, value, detail_kind, detail_prompt FROM attribute_values
      WHERE attribute_id = ANY($1::int[]) AND NOT hidden ORDER BY (value LIKE 'אחר%'), display_order`,
     [attrs.map((a) => a.id)]
   );
   res.json(
     attrs.map((a) => ({
       ...a,
-      values: values.rows.filter((v) => v.attribute_id === a.id).map((v) => ({ id: v.id, value: v.value })),
+      values: values.rows.filter((v) => v.attribute_id === a.id).map((v) => ({ id: v.id, value: v.value, detail_kind: v.detail_kind, detail_prompt: v.detail_prompt })),
     }))
   );
 }));
@@ -99,14 +99,14 @@ router.get("/universal-attributes", asyncHandler(async (req, res) => {
   );
   const attrs = r.rows;
   const values = await pool.query(
-    `SELECT attribute_id, id, value FROM attribute_values
+    `SELECT attribute_id, id, value, detail_kind, detail_prompt FROM attribute_values
      WHERE attribute_id = ANY($1::int[]) AND NOT hidden ORDER BY (value LIKE 'אחר%'), display_order`,
     [attrs.map((a) => a.id)]
   );
   res.json(
     attrs.map((a) => ({
       ...a,
-      values: values.rows.filter((v) => v.attribute_id === a.id).map((v) => ({ id: v.id, value: v.value })),
+      values: values.rows.filter((v) => v.attribute_id === a.id).map((v) => ({ id: v.id, value: v.value, detail_kind: v.detail_kind, detail_prompt: v.detail_prompt })),
     }))
   );
 }));

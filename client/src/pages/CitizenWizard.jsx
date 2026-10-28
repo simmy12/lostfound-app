@@ -32,8 +32,74 @@ function isYesNo(attr) {
   return vals.length === 2 && vals.includes("כן") && vals.includes("לא");
 }
 
+// Follow-up for an answer the admin marked "מבקש פירוט" (detail_kind). 'text' is a plain field;
+// 'letters_or_text' first asks "only letters?" — yes gives one box per letter so it's clear exactly
+// which letters were written, no gives a plain field. The detail object lives in value.details[valueId].
+const MAX_LETTERS = 10;
+
+function DetailField({ v, detail, onChange }) {
+  const d = detail || {};
+  if (v.detail_kind === "letters_or_text") {
+    const letters = d.letters?.length ? d.letters : ["", "", ""];
+    const setLetter = (i, ch) => onChange({ ...d, mode: "letters", letters: letters.map((x, j) => (j === i ? ch.slice(-1) : x)) });
+    return (
+      <div className="detail-box">
+        <div className="q-label" style={{ marginBottom: 6 }}>{v.detail_prompt || "לפרט"}: האם רק אותיות?</div>
+        <div className="opts" style={{ marginBottom: 8 }}>
+          <button type="button" className={"opt-btn" + (d.mode === "letters" ? " sel" : "")} onClick={() => onChange({ ...d, mode: "letters", letters })}>כן, רק אותיות</button>
+          <button type="button" className={"opt-btn" + (d.mode === "text" ? " sel" : "")} onClick={() => onChange({ ...d, mode: "text" })}>לא</button>
+        </div>
+        {d.mode === "letters" && (
+          <>
+            <div className="letter-boxes">
+              {letters.map((ch, i) => (
+                <input
+                  key={i}
+                  type="text"
+                  className="letter-box"
+                  maxLength={2}
+                  value={ch}
+                  aria-label={`אות ${i + 1}`}
+                  onChange={(e) => {
+                    setLetter(i, e.target.value);
+                    if (e.target.value) e.target.nextElementSibling?.focus();
+                  }}
+                />
+              ))}
+            </div>
+            <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
+              {letters.length < MAX_LETTERS && <button type="button" className="btn btn-sm" onClick={() => onChange({ ...d, mode: "letters", letters: [...letters, ""] })}>+ אות</button>}
+              {letters.length > 1 && <button type="button" className="btn btn-sm" onClick={() => onChange({ ...d, mode: "letters", letters: letters.slice(0, -1) })}>− אות</button>}
+            </div>
+            <p className="muted" style={{ fontSize: 12, margin: "4px 0 0" }}>אות אחת בכל תיבה, לפי הסדר.</p>
+          </>
+        )}
+        {d.mode === "text" && (
+          <input type="text" placeholder="מה כתוב?" value={d.text || ""} onChange={(e) => onChange({ ...d, mode: "text", text: e.target.value })} />
+        )}
+      </div>
+    );
+  }
+  return (
+    <div className="detail-box">
+      <div className="q-label" style={{ marginBottom: 6 }}>{v.detail_prompt || `לפרט (${v.value})`}</div>
+      <input type="text" placeholder="לפרט..." value={d.text || ""} onChange={(e) => onChange({ ...d, mode: "text", text: e.target.value })} />
+    </div>
+  );
+}
+
+// the text saved with an answer's follow-up ("" when nothing was filled in)
+function detailText(d) {
+  if (!d) return "";
+  if (d.mode === "letters") {
+    const letters = (d.letters || []).map((x) => x.trim()).filter(Boolean);
+    return letters.length ? "אותיות: " + letters.join(" ") : "";
+  }
+  return (d.text || "").trim();
+}
+
 // value shapes stored in an `answers` map (attribute_id -> value):
-//   choice:           { attribute_id, value_ids: [...] (max maxPicks), isOther?, free_text? }
+//   choice:           { attribute_id, value_ids: [...] (max maxPicks), isOther?, free_text?, details?: {valueId: detail} }
 //   strict yes/no:    { attribute_id, value_id? , isOther?, free_text? }
 //   text/number/date: { attribute_id, free_text }
 function AttributeField({ attr, value, onChange }) {
@@ -86,9 +152,9 @@ function AttributeField({ attr, value, onChange }) {
                 disabled={disabled}
                 className={"opt-btn" + (isSel ? " sel" : "")}
                 onClick={() => {
-                  if (cap === 1) return onChange({ attribute_id: attr.id, value_ids: isSel ? [] : [v.id] });
+                  if (cap === 1) return onChange({ attribute_id: attr.id, value_ids: isSel ? [] : [v.id], details: value?.details });
                   const next = isSel ? selected.filter((id) => id !== v.id) : [...selected, v.id];
-                  onChange({ attribute_id: attr.id, value_ids: next, isOther, free_text: value?.free_text });
+                  onChange({ attribute_id: attr.id, value_ids: next, isOther, free_text: value?.free_text, details: value?.details });
                 }}
               >
                 {v.value}
@@ -100,19 +166,27 @@ function AttributeField({ attr, value, onChange }) {
               type="button"
               disabled={!isOther && atCap}
               className={"opt-btn" + (isOther ? " sel" : "")}
-              onClick={() => onChange({ attribute_id: attr.id, value_ids: cap === 1 ? [] : selected, isOther: !isOther, free_text: value?.free_text })}
+              onClick={() => onChange({ attribute_id: attr.id, value_ids: cap === 1 ? [] : selected, isOther: !isOther, free_text: value?.free_text, details: value?.details })}
             >
               אחר
             </button>
           )}
         </div>
+        {attr.values.filter((v) => v.detail_kind && selected.includes(v.id)).map((v) => (
+          <DetailField
+            key={v.id}
+            v={v}
+            detail={value?.details?.[v.id]}
+            onChange={(d) => onChange({ ...value, attribute_id: attr.id, value_ids: selected, details: { ...(value?.details || {}), [v.id]: d } })}
+          />
+        ))}
         {isOther && (
           <input
             type="text"
             className={otherCls}
             placeholder="לפרט..."
             value={value?.free_text || ""}
-            onChange={(e) => onChange({ attribute_id: attr.id, value_ids: selected, isOther: true, free_text: e.target.value })}
+            onChange={(e) => onChange({ attribute_id: attr.id, value_ids: selected, isOther: true, free_text: e.target.value, details: value?.details })}
           />
         )}
       </div>
@@ -163,7 +237,7 @@ function flattenAnswers(answers) {
   for (const a of Object.values(answers)) {
     if (!a) continue;
     if (a.value_ids) {
-      for (const vid of a.value_ids) out.push({ attribute_id: a.attribute_id, value_id: vid });
+      for (const vid of a.value_ids) out.push({ attribute_id: a.attribute_id, value_id: vid, free_text: detailText(a.details?.[vid]) || undefined });
       if (a.isOther && a.free_text) out.push({ attribute_id: a.attribute_id, free_text: a.free_text });
     } else if (a.isOther) {
       if (a.free_text) out.push({ attribute_id: a.attribute_id, free_text: a.free_text });
@@ -538,6 +612,8 @@ export default function CitizenWizard({ repMode = false }) {
   const [submitted, setSubmitted] = useState(null);
   const [showErrors, setShowErrors] = useState(false);
 
+  const [unitCount, setUnitCount] = useState(1); // multi-unit items: how many were lost/found together
+  const [unitAnswers, setUnitAnswers] = useState([]); // answers maps for units 2..unitCount (unit 1 uses `answers`)
   const [contents, setContents] = useState([]); // "what was inside" — SubReportPicker entries
   const [containerItems, setContainerItems] = useState([]); // "was it inside something" — max 1
   const [nearbyItems, setNearbyItems] = useState([]); // "items found nearby"
@@ -553,6 +629,8 @@ export default function CitizenWizard({ repMode = false }) {
       setItemMeta(null);
     }
     setContents([]);
+    setUnitCount(1);
+    setUnitAnswers([]);
     setContainerItems([]);
     setNearbyItems([]);
     setOtherItemText("");
@@ -564,8 +642,12 @@ export default function CitizenWizard({ repMode = false }) {
   // answered "yes" to "what was inside?" (so pickers are open) but fewer than MIN_CONTENTS items chosen
   const contentsTooFew = contents.length > 0 && contents.filter((c) => c.value).length < MIN_CONTENTS;
   // blocks "המשך": an "אחר" picked but not typed in, or an admin-marked-required question left unanswered
+  const multiUnit = !!itemMeta?.multi_unit && unitCount > 1;
+  const extraUnits = multiUnit ? Array.from({ length: unitCount - 1 }, (_, i) => unitAnswers[i] || {}) : [];
+  const unitIncomplete = (ans) => itemAttrs.some((a) => isOtherIncomplete(ans[a.id]) || (a.required && !isAnswered(a, ans[a.id])));
   const step1Incomplete =
-    itemAttrs.some((a) => isOtherIncomplete(answers[a.id]) || (a.required && !isAnswered(a, answers[a.id]))) ||
+    unitIncomplete(answers) ||
+    extraUnits.some(unitIncomplete) ||
     contentsTooFew ||
     contents.some((c) => c.value?.incomplete) ||
     containerItems.some((c) => c.value?.incomplete) ||
@@ -596,6 +678,7 @@ export default function CitizenWizard({ repMode = false }) {
       other_item_text: itemMeta?.is_other_placeholder ? otherItemText.trim() : null,
       ...contact,
       item_answers: flattenAnswers(pick(itemAttrIds)),
+      units: extraUnits.map(flattenAnswers),
       universal_answers: flattenAnswers(pick(universalAttrIds)),
       contents: contents.filter((c) => c.value).map((c) => c.value),
       container: containerItems[0]?.value || null,
@@ -687,12 +770,42 @@ export default function CitizenWizard({ repMode = false }) {
       <div className="card" style={{ display: step === 1 ? undefined : "none" }}>
           <div className="card-h">פרטי הפריט</div>
           <div className="card-b">
+            {itemMeta?.multi_unit && (
+              <div className="q-block">
+                <div className="q-label">כמה {itemName} {type === "lost" ? "אבדו" : "נמצאו"} יחד?</div>
+                <div className="opts">
+                  {Array.from({ length: itemMeta.max_units || 5 }, (_, i) => i + 1).map((n) => (
+                    <button key={n} type="button" className={"opt-btn" + (unitCount === n ? " sel" : "")} onClick={() => setUnitCount(n)}>
+                      {n}
+                    </button>
+                  ))}
+                </div>
+                {unitCount > 1 && <p className="muted" style={{ margin: "6px 0 0" }}>יש לתאר כל {itemName} בנפרד. כל אחת תקבל התאמות משלה.</p>}
+              </div>
+            )}
             {itemAttrs.length === 0 && <p className="muted">לפריט זה אין שאלות נוספות.</p>}
-            {itemAttrs.map((attr, i) => (
-              <QuestionBlock key={attr.id} attr={attr} answered={isAnswered(attr, answers[attr.id])}>
-                <div className="q-label"><span className="q-num">{i + 1}</span>{attrLabel(attr)}{attr.required && <span style={{ color: "#b91c1c" }}> *</span>}</div>
-                <AttributeField attr={attr} value={answers[attr.id]} onChange={setAnswer} />
-              </QuestionBlock>
+            {[answers, ...extraUnits].map((unitAns, u) => (
+              <div key={u} className={multiUnit ? "unit-block" : undefined}>
+                {multiUnit && <div className="unit-title">{itemName} {u + 1}</div>}
+                {itemAttrs.map((attr, i) => (
+                  <QuestionBlock key={attr.id} attr={attr} answered={isAnswered(attr, unitAns[attr.id])}>
+                    <div className="q-label"><span className="q-num">{i + 1}</span>{attrLabel(attr)}{attr.required && <span style={{ color: "#b91c1c" }}> *</span>}</div>
+                    <AttributeField
+                      attr={attr}
+                      value={unitAns[attr.id]}
+                      onChange={
+                        u === 0
+                          ? setAnswer
+                          : (a) => setUnitAnswers((prev) => {
+                              const next = [...prev];
+                              next[u - 1] = { ...(next[u - 1] || {}), [a.attribute_id]: a };
+                              return next;
+                            })
+                      }
+                    />
+                  </QuestionBlock>
+                ))}
+              </div>
             ))}
 
             {itemMeta?.can_contain_items && (
@@ -768,6 +881,7 @@ export default function CitizenWizard({ repMode = false }) {
             <div className="card-h">סיכום הדיווח</div>
             <div className="card-b">
               <div className="sum-row"><span className="sum-k">סוג</span><span>{type === "lost" ? "אבדה" : "מציאה"}</span></div>
+              {multiUnit && <div className="sum-row"><span className="sum-k">כמות</span><span>{unitCount} (כל אחת תדווח בנפרד)</span></div>}
               {itemAttrs.map((attr) => answers[attr.id] && (
                 <div className="sum-row" key={attr.id}>
                   <span className="sum-k">{attr.name}</span>
@@ -775,7 +889,10 @@ export default function CitizenWizard({ repMode = false }) {
                     {answers[attr.id].isOther
                       ? answers[attr.id].free_text
                       : answers[attr.id].value_ids
-                        ? attr.values.filter((v) => answers[attr.id].value_ids.includes(v.id)).map((v) => v.value).join(", ")
+                        ? attr.values
+                            .filter((v) => answers[attr.id].value_ids.includes(v.id))
+                            .map((v) => (detailText(answers[attr.id].details?.[v.id]) ? `${v.value} (${detailText(answers[attr.id].details[v.id])})` : v.value))
+                            .join(", ")
                         : attr.values?.find((v) => v.id === answers[attr.id].value_id)?.value || formatAnswerValue(attr.name, answers[attr.id].free_text)}
                   </span>
                 </div>

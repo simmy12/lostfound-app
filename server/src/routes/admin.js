@@ -70,15 +70,38 @@ async function linkToItem(db, attributeId, itemId) {
   );
 }
 
-// a fresh copy of an existing question (name, type, visible values in their order)
+// a fresh, independent copy of an existing question: name, type, max picks and its visible
+// answers in order, each with its follow-up ("מבקש פירוט") settings
 async function copyAttribute(db, sourceId) {
   const a = await db.query(`SELECT name, input_type, max_select FROM attributes WHERE id = $1`, [sourceId]);
   if (!a.rows.length) return null;
-  const v = await db.query(
-    `SELECT value FROM attribute_values WHERE attribute_id = $1 AND NOT hidden ORDER BY display_order`,
-    [sourceId]
+  const id = await createAttribute(db, { ...a.rows[0], scope: "item", values: [] });
+  await db.query(
+    `INSERT INTO attribute_values (attribute_id, value, display_order, detail_kind, detail_prompt)
+     SELECT $1, value, display_order, detail_kind, detail_prompt
+     FROM attribute_values WHERE attribute_id = $2 AND NOT hidden`,
+    [id, sourceId]
   );
-  return createAttribute(db, { ...a.rows[0], scope: "item", values: v.rows.map((r) => r.value) });
+  return id;
+}
+
+// copy a question onto an item together with its per-item settings (required, "אחר", weight)
+// taken from fromItemId's link — or from any item asking it when fromItemId isn't given
+async function copyQuestionToItem(db, sourceId, itemId, fromItemId) {
+  const copyId = await copyAttribute(db, sourceId);
+  if (!copyId) return;
+  const link = await db.query(
+    `SELECT required, allow_other, weight FROM item_attributes WHERE attribute_id = $1 ORDER BY (item_id = $2) DESC LIMIT 1`,
+    [sourceId, fromItemId || 0]
+  );
+  await linkToItem(db, copyId, itemId);
+  if (link.rows.length) {
+    const { required, allow_other, weight } = link.rows[0];
+    await db.query(
+      `UPDATE item_attributes SET required = $1, allow_other = $2, weight = $3 WHERE item_id = $4 AND attribute_id = $5`,
+      [required, allow_other, weight, itemId, copyId]
+    );
+  }
 }
 
 // runs fn inside a transaction on a dedicated client
@@ -118,11 +141,36 @@ router.post("/admin/attributes/:id/items", asyncHandler(async (req, res) => {
   const { item_ids } = req.body;
   if (!Array.isArray(item_ids) || !item_ids.length) return res.status(400).json({ error: "item_ids is required" });
   await inTransaction(async (db) => {
-    for (const itemId of item_ids) {
-      const copyId = await copyAttribute(db, req.params.id);
-      if (copyId) await linkToItem(db, copyId, itemId);
-    }
+    for (const itemId of item_ids) await copyQuestionToItem(db, req.params.id, itemId);
   });
+  res.json({ ok: true });
+}));
+
+// copy questions from another item onto this one, everything included (answers and their order,
+// follow-ups, type, max picks, required, "אחר", weight) — all of them, or just attribute_ids
+router.post("/admin/items/:id/copy-questions", asyncHandler(async (req, res) => {
+  const { from_item_id, attribute_ids } = req.body;
+  if (!from_item_id) return res.status(400).json({ error: "from_item_id is required" });
+  const src = await pool.query(
+    `SELECT attribute_id FROM item_attributes WHERE item_id = $1 ORDER BY display_order`,
+    [from_item_id]
+  );
+  const ids = src.rows.map((r) => r.attribute_id).filter((id) => !attribute_ids || attribute_ids.includes(id));
+  await inTransaction(async (db) => {
+    for (const id of ids) await copyQuestionToItem(db, id, req.params.id, from_item_id);
+  });
+  res.json({ ok: true, count: ids.length });
+}));
+
+router.put("/admin/items/:id/question-order", asyncHandler(async (req, res) => {
+  const { attribute_ids } = req.body;
+  if (!Array.isArray(attribute_ids)) return res.status(400).json({ error: "attribute_ids is required" });
+  await pool.query(
+    `UPDATE item_attributes ia SET display_order = o.pos
+     FROM unnest($1::int[]) WITH ORDINALITY AS o(id, pos)
+     WHERE ia.attribute_id = o.id AND ia.item_id = $2`,
+    [attribute_ids, req.params.id]
+  );
   res.json({ ok: true });
 }));
 
@@ -255,6 +303,33 @@ router.put("/admin/attribute-values/:id", asyncHandler(async (req, res) => {
   res.json({ ok: true });
 }));
 
+// an answer's follow-up: picking it opens a field — detail_kind 'text' or 'letters_or_text'
+// (asks "only letters?" and then gives one box per letter), or null for none
+router.put("/admin/attribute-values/:id/detail", asyncHandler(async (req, res) => {
+  const kind = req.body.detail_kind || null;
+  if (kind && !["text", "letters_or_text"].includes(kind)) return res.status(400).json({ error: "invalid detail_kind" });
+  const prompt = kind ? (req.body.detail_prompt || "").trim() || null : null;
+  await pool.query(`UPDATE attribute_values SET detail_kind = $1, detail_prompt = $2 WHERE id = $3`, [kind, prompt, req.params.id]);
+  res.json({ ok: true });
+}));
+
+// remove several answers at once — same rule as one: hidden if past reports picked it, else deleted
+router.post("/admin/attribute-values/delete", asyncHandler(async (req, res) => {
+  const { ids } = req.body;
+  if (!Array.isArray(ids) || !ids.length) return res.status(400).json({ error: "ids is required" });
+  await pool.query(
+    `UPDATE attribute_values v SET hidden = true WHERE v.id = ANY($1::int[])
+       AND EXISTS (SELECT 1 FROM report_attribute_values r WHERE r.value_id = v.id)`,
+    [ids]
+  );
+  await pool.query(
+    `DELETE FROM attribute_values v WHERE v.id = ANY($1::int[])
+       AND NOT EXISTS (SELECT 1 FROM report_attribute_values r WHERE r.value_id = v.id)`,
+    [ids]
+  );
+  res.json({ ok: true });
+}));
+
 // a value already picked in past reports can't be deleted (those answers point at it), so it's
 // hidden from new reports instead; an unused value is deleted outright
 router.delete("/admin/attribute-values/:id", asyncHandler(async (req, res) => {
@@ -271,6 +346,7 @@ router.delete("/admin/attribute-values/:id", asyncHandler(async (req, res) => {
 router.get("/admin/items", asyncHandler(async (req, res) => {
   const r = await pool.query(
     `SELECT i.id, i.name, i.sub_id, i.can_be_contained, i.can_have_nearby, i.can_contain_items, i.is_common_container,
+            i.is_hidden, i.multi_unit, i.max_units,
             cs.name AS sub_name, cm.id AS main_id, cm.name AS main_name
      FROM items i JOIN categories_sub cs ON cs.id = i.sub_id JOIN categories_main cm ON cm.id = cs.main_id
      ORDER BY (cm.name = 'אחר'), cm.name, (cs.name = 'אחר'), cs.name, (i.name = 'אחר'), i.name`
@@ -288,14 +364,14 @@ router.get("/admin/items/:itemId/attributes", asyncHandler(async (req, res) => {
   );
   const attrs = r.rows;
   const values = await pool.query(
-    `SELECT attribute_id, id, value FROM attribute_values
+    `SELECT attribute_id, id, value, detail_kind, detail_prompt FROM attribute_values
      WHERE attribute_id = ANY($1::int[]) AND NOT hidden ORDER BY (value LIKE 'אחר%'), display_order`,
     [attrs.map((a) => a.id)]
   );
   res.json(
     attrs.map((a) => ({
       ...a,
-      values: values.rows.filter((v) => v.attribute_id === a.id).map((v) => ({ id: v.id, value: v.value })),
+      values: values.rows.filter((v) => v.attribute_id === a.id).map((v) => ({ id: v.id, value: v.value, detail_kind: v.detail_kind, detail_prompt: v.detail_prompt })),
     }))
   );
 }));
@@ -308,14 +384,14 @@ router.get("/admin/universal-attributes", asyncHandler(async (req, res) => {
   );
   const attrs = r.rows;
   const values = await pool.query(
-    `SELECT attribute_id, id, value FROM attribute_values
+    `SELECT attribute_id, id, value, detail_kind, detail_prompt FROM attribute_values
      WHERE attribute_id = ANY($1::int[]) AND NOT hidden ORDER BY (value LIKE 'אחר%'), display_order`,
     [attrs.map((a) => a.id)]
   );
   res.json(
     attrs.map((a) => ({
       ...a,
-      values: values.rows.filter((v) => v.attribute_id === a.id).map((v) => ({ id: v.id, value: v.value })),
+      values: values.rows.filter((v) => v.attribute_id === a.id).map((v) => ({ id: v.id, value: v.value, detail_kind: v.detail_kind, detail_prompt: v.detail_prompt })),
     }))
   );
 }));
@@ -371,10 +447,32 @@ router.put("/admin/items/:id/name", asyncHandler(async (req, res) => {
   res.json({ ok: true });
 }));
 
+// "delete" an item: hidden from every list (catalog, search, admin tree, containers list) but
+// past reports keep pointing at it and showing its name. Restorable.
+router.put("/admin/items/:id/hidden", asyncHandler(async (req, res) => {
+  const r = await pool.query(`UPDATE items SET is_hidden = $1 WHERE id = $2 RETURNING id`, [!!req.body.hidden, req.params.id]);
+  if (!r.rows.length) return res.status(404).json({ error: "not found" });
+  res.json({ ok: true });
+}));
+
+// delete a sub-category. One that still has items needs move_to_sub_id: its items (hidden ones
+// too) move there first, so nothing is lost; otherwise 409 with the item count.
+router.post("/admin/categories/subs/:id/delete", asyncHandler(async (req, res) => {
+  const { move_to_sub_id } = req.body;
+  const n = (await pool.query(`SELECT COUNT(*)::int AS n FROM items WHERE sub_id = $1`, [req.params.id])).rows[0].n;
+  if (n && !move_to_sub_id) return res.status(409).json({ error: "sub-category has items", count: n });
+  if (n && Number(move_to_sub_id) === Number(req.params.id)) return res.status(400).json({ error: "cannot move items into the deleted sub-category" });
+  await inTransaction(async (db) => {
+    if (n) await db.query(`UPDATE items SET sub_id = $1 WHERE sub_id = $2`, [move_to_sub_id, req.params.id]);
+    await db.query(`DELETE FROM categories_sub WHERE id = $1`, [req.params.id]);
+  });
+  res.json({ ok: true, moved: n });
+}));
+
 // ---- the "בתוך מה היה?" list: the items a reporter can pick as "it was inside this" ----
 
 router.get("/admin/containers", asyncHandler(async (req, res) => {
-  const r = await pool.query(`SELECT id, name FROM items WHERE is_common_container ORDER BY container_order, name`);
+  const r = await pool.query(`SELECT id, name FROM items WHERE is_common_container AND NOT is_hidden ORDER BY container_order, name`);
   res.json(r.rows);
 }));
 
@@ -390,7 +488,8 @@ router.put("/admin/containers/order", asyncHandler(async (req, res) => {
 
 // per-item flags: whether to ask "was this inside something?" / "anything found nearby?"
 router.put("/admin/items/:id/flags", asyncHandler(async (req, res) => {
-  const { can_be_contained, can_have_nearby, can_contain_items, is_common_container } = req.body;
+  const { can_be_contained, can_have_nearby, can_contain_items, is_common_container, multi_unit } = req.body;
+  const maxUnits = req.body.max_units == null ? null : Math.max(2, Math.min(20, Number(req.body.max_units) || 2));
   const r = await pool.query(
     `UPDATE items SET
        can_be_contained    = COALESCE($1, can_be_contained),
@@ -400,9 +499,11 @@ router.put("/admin/items/:id/flags", asyncHandler(async (req, res) => {
        container_order     = CASE WHEN $4 AND NOT is_common_container
                                THEN (SELECT COALESCE(MAX(container_order), 0) + 1 FROM items WHERE is_common_container)
                                ELSE container_order END,
-       is_common_container = COALESCE($4, is_common_container)
-     WHERE id = $5 RETURNING id, can_be_contained, can_have_nearby, can_contain_items, is_common_container`,
-    [can_be_contained, can_have_nearby, can_contain_items, is_common_container, req.params.id]
+       is_common_container = COALESCE($4, is_common_container),
+       multi_unit          = COALESCE($6, multi_unit),
+       max_units           = COALESCE($7, max_units)
+     WHERE id = $5 RETURNING id, can_be_contained, can_have_nearby, can_contain_items, is_common_container, multi_unit, max_units`,
+    [can_be_contained, can_have_nearby, can_contain_items, is_common_container, req.params.id, multi_unit, maxUnits]
   );
   if (!r.rows.length) return res.status(404).json({ error: "not found" });
   res.json(r.rows[0]);

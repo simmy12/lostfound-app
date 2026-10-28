@@ -45,6 +45,9 @@ function Modal({ title, onClose, children, wide }) {
 }
 
 // full detail of a single report: item, every answer, contact, free text, and its links
+// an answer as shown to the rep: the picked value with its follow-up (e.g. "שם (משה)"), or the free text
+const answerText = (a) => (a.value ? (a.free_text ? `${a.value} (${a.free_text})` : a.value) : formatAnswerValue(a.attribute_name, a.free_text));
+
 function ReportDetail({ r }) {
   if (!r) return <p className="muted">טוען...</p>;
   return (
@@ -61,7 +64,7 @@ function ReportDetail({ r }) {
       {r.answers?.map((a) => (
         <div className="sum-row" key={a.attribute_id}>
           <span className="sum-k">{a.attribute_name}</span>
-          <span>{a.value || formatAnswerValue(a.attribute_name, a.free_text) || "—"}</span>
+          <span>{answerText(a) || "—"}</span>
         </div>
       ))}
       {(r.free_text || r.note) && (
@@ -160,7 +163,7 @@ export default function RepSearch() {
 
   const rows = [];
   if (detail && compareDetail) {
-    const byName = (r) => Object.fromEntries(r.answers.map((a) => [a.attribute_name, a.value || formatAnswerValue(a.attribute_name, a.free_text)]));
+    const byName = (r) => Object.fromEntries(r.answers.map((a) => [a.attribute_name, answerText(a)]));
     const dMap = byName(detail);
     const cMap = byName(compareDetail);
     const names = new Set([...Object.keys(dMap), ...Object.keys(cMap)]);

@@ -33,6 +33,9 @@ CREATE TABLE items (
   can_contain_items BOOLEAN NOT NULL DEFAULT false, -- ask "what was inside it?" (true for bags/suitcases etc.)
   is_common_container BOOLEAN NOT NULL DEFAULT false, -- offered in the curated "בתוך מה היה?" list
   container_order   INTEGER NOT NULL DEFAULT 0,     -- position in that list (admin drags to reorder)
+  is_hidden         BOOLEAN NOT NULL DEFAULT false, -- admin "deleted" it: gone from every list, kept on past reports
+  multi_unit        BOOLEAN NOT NULL DEFAULT false, -- reporter says how many (e.g. rings) and describes each; one report per unit
+  max_units         INTEGER NOT NULL DEFAULT 5,
   is_other_placeholder BOOLEAN NOT NULL DEFAULT false -- the generic "אחר" item; picking it requires free text and queues the report for admin review
 );
 
@@ -53,6 +56,8 @@ CREATE TABLE attribute_values (
   value        TEXT NOT NULL,
   display_order INTEGER NOT NULL DEFAULT 0,
   hidden       BOOLEAN NOT NULL DEFAULT false, -- used by past reports, so hidden instead of deleted
+  detail_kind  TEXT,  -- picking this answer opens a follow-up: 'text' or 'letters_or_text'
+  detail_prompt TEXT, -- the follow-up's question, e.g. "מה השם?"
   UNIQUE (attribute_id, value)
 );
 
