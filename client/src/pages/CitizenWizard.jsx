@@ -648,7 +648,7 @@ export default function CitizenWizard({ repMode = false }) {
   // answered "yes" to "what was inside?" (so pickers are open) but fewer than MIN_CONTENTS items chosen
   const contentsTooFew = contents.length > 0 && contents.filter((c) => c.value).length < MIN_CONTENTS;
   // blocks "המשך": an "אחר" picked but not typed in, or an admin-marked-required question left unanswered
-  const multiUnit = !!itemMeta?.multi_unit && unitCount > 1;
+  const multiUnit = !!itemMeta?.multi_unit && !!itemMeta.units_prompt && unitCount > 1;
   const extraUnits = multiUnit ? Array.from({ length: unitCount - 1 }, (_, i) => unitAnswers[i] || {}) : [];
   const unitIncomplete = (ans) => itemAttrs.some((a) => isOtherIncomplete(ans[a.id]) || (a.required && !isAnswered(a, ans[a.id])));
   const step1Incomplete =
@@ -776,9 +776,9 @@ export default function CitizenWizard({ repMode = false }) {
       <div className="card" style={{ display: step === 1 ? undefined : "none" }}>
           <div className="card-h">פרטי הפריט</div>
           <div className="card-b">
-            {itemMeta?.multi_unit && (
+            {itemMeta?.multi_unit && itemMeta.units_prompt && (
               <div className="q-block">
-                <div className="q-label">כמה {itemName} {type === "lost" ? "אבדו" : "נמצאו"} יחד?</div>
+                <div className="q-label">{itemMeta.units_prompt}</div>
                 <div className="opts">
                   {Array.from({ length: itemMeta.max_units || 5 }, (_, i) => i + 1).map((n) => (
                     <button key={n} type="button" className={"opt-btn" + (unitCount === n ? " sel" : "")} onClick={() => setUnitCount(n)}>

@@ -36,6 +36,7 @@ CREATE TABLE items (
   is_hidden         BOOLEAN NOT NULL DEFAULT false, -- admin "deleted" it: gone from every list, kept on past reports
   multi_unit        BOOLEAN NOT NULL DEFAULT false, -- reporter says how many (e.g. rings) and describes each; one report per unit
   max_units         INTEGER NOT NULL DEFAULT 5,
+  units_prompt      TEXT,                           -- the "how many?" question wording, set by the admin per item (no default)
   is_other_placeholder BOOLEAN NOT NULL DEFAULT false -- the generic "אחר" item; picking it requires free text and queues the report for admin review
 );
 

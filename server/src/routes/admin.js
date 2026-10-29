@@ -346,7 +346,7 @@ router.delete("/admin/attribute-values/:id", asyncHandler(async (req, res) => {
 router.get("/admin/items", asyncHandler(async (req, res) => {
   const r = await pool.query(
     `SELECT i.id, i.name, i.sub_id, i.can_be_contained, i.can_have_nearby, i.can_contain_items, i.is_common_container,
-            i.is_hidden, i.multi_unit, i.max_units,
+            i.is_hidden, i.multi_unit, i.max_units, i.units_prompt,
             cs.name AS sub_name, cm.id AS main_id, cm.name AS main_name
      FROM items i JOIN categories_sub cs ON cs.id = i.sub_id JOIN categories_main cm ON cm.id = cs.main_id
      ORDER BY (cm.name = 'אחר'), cm.name, (cs.name = 'אחר'), cs.name, (i.name = 'אחר'), i.name`
@@ -498,6 +498,8 @@ router.put("/admin/items/:id/containers", asyncHandler(async (req, res) => {
 // per-item flags: whether to ask "was this inside something?" / "anything found nearby?"
 router.put("/admin/items/:id/flags", asyncHandler(async (req, res) => {
   const { can_be_contained, can_have_nearby, can_contain_items, is_common_container, multi_unit } = req.body;
+  // units_prompt: the admin's wording for the "how many?" question; "" clears it
+  const unitsPrompt = req.body.units_prompt === undefined ? undefined : (req.body.units_prompt || "").trim();
   const maxUnits = req.body.max_units == null ? null : Math.max(2, Math.min(20, Number(req.body.max_units) || 2));
   const r = await pool.query(
     `UPDATE items SET
@@ -510,9 +512,10 @@ router.put("/admin/items/:id/flags", asyncHandler(async (req, res) => {
                                ELSE container_order END,
        is_common_container = COALESCE($4, is_common_container),
        multi_unit          = COALESCE($6, multi_unit),
-       max_units           = COALESCE($7, max_units)
-     WHERE id = $5 RETURNING id, can_be_contained, can_have_nearby, can_contain_items, is_common_container, multi_unit, max_units`,
-    [can_be_contained, can_have_nearby, can_contain_items, is_common_container, req.params.id, multi_unit, maxUnits]
+       max_units           = COALESCE($7, max_units),
+       units_prompt        = CASE WHEN $8::boolean THEN NULLIF($9, '') ELSE units_prompt END
+     WHERE id = $5 RETURNING id, can_be_contained, can_have_nearby, can_contain_items, is_common_container, multi_unit, max_units, units_prompt`,
+    [can_be_contained, can_have_nearby, can_contain_items, is_common_container, req.params.id, multi_unit, maxUnits, unitsPrompt !== undefined, unitsPrompt ?? null]
   );
   if (!r.rows.length) return res.status(404).json({ error: "not found" });
   res.json(r.rows[0]);

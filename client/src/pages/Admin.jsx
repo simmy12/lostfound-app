@@ -544,6 +544,36 @@ function CopyQuestionsPanel({ item, items, onDone }) {
   );
 }
 
+// the wording of a multi-unit item's "how many?" question — no default, so the admin writes it
+function UnitsPromptField({ initial, onSave }) {
+  const [text, setText] = useState(initial);
+  const [saved, setSaved] = useState(false);
+  const dirty = text.trim() !== initial;
+  async function save() {
+    await onSave(text.trim());
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2000);
+  }
+  return (
+    <div style={{ marginTop: 10 }}>
+      <label>ניסוח השאלה למשתמש (למשל: "כמה טבעות נמצאו יחד?")</label>
+      <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+        <input
+          type="text"
+          className={!initial && !text.trim() ? "input-err" : undefined}
+          value={text}
+          placeholder="כתבו את ניסוח השאלה..."
+          onChange={(e) => setText(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter" && dirty) save(); }}
+        />
+        {dirty && <button className="btn btn-sm btn-pr" style={{ flexShrink: 0 }} onClick={save}>שמור</button>}
+        {saved && <span className="muted" style={{ flexShrink: 0 }}>✓ נשמר</span>}
+      </div>
+      {!initial && <p className="err-text" style={{ margin: "4px 0 0", fontSize: 12 }}>כל עוד אין ניסוח, השאלה לא תוצג למשתמש.</p>}
+    </div>
+  );
+}
+
 const DETAIL_KIND_LABEL = { "": "בלי פירוט", text: "שדה טקסט", letters_or_text: "אותיות (עד 5, תיבה לכל אות) או שם" };
 
 // an answer's follow-up settings: what opens when a reporter picks it
@@ -1148,8 +1178,8 @@ export default function Admin() {
     loadItems();
   }
 
-  async function setUnits(multi_unit, max_units) {
-    const updated = await api.adminSetItemFlags(selectedItem.id, { multi_unit, max_units });
+  async function setUnits(multi_unit, max_units, units_prompt) {
+    const updated = await api.adminSetItemFlags(selectedItem.id, { multi_unit, max_units, units_prompt });
     setSelectedItem((prev) => ({ ...prev, ...updated }));
     setItems((prev) => prev.map((it) => (it.id === selectedItem.id ? { ...it, ...updated } : it)));
   }
@@ -1420,6 +1450,13 @@ export default function Admin() {
                       )}
                     </label>
                   </div>
+                  {selectedItem.multi_unit && (
+                    <UnitsPromptField
+                      key={selectedItem.id}
+                      initial={selectedItem.units_prompt || ""}
+                      onSave={(text) => setUnits(true, selectedItem.max_units || 5, text)}
+                    />
+                  )}
                 </div>
 
                 <ItemContainersEditor item={selectedItem} items={visibleItems} />

@@ -65,7 +65,7 @@ router.get("/items/:itemId", asyncHandler(async (req, res) => {
   const itemId = parseId(req, res, "itemId");
   if (itemId == null) return;
   const r = await pool.query(
-    "SELECT id, name, can_be_contained, can_have_nearby, can_contain_items, is_other_placeholder, multi_unit, max_units FROM items WHERE id = $1",
+    "SELECT id, name, can_be_contained, can_have_nearby, can_contain_items, is_other_placeholder, multi_unit, max_units, units_prompt FROM items WHERE id = $1",
     [itemId]
   );
   if (!r.rows.length) return res.status(404).json({ error: "not found" });
