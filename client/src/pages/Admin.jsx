@@ -556,7 +556,7 @@ function UnitsPromptField({ initial, onSave }) {
   }
   return (
     <div style={{ marginTop: 10 }}>
-      <label>ניסוח השאלה למשתמש (למשל: "כמה טבעות נמצאו יחד?")</label>
+      <label>השאלה שהמשתמש יראה (למשל: "כמה טבעות נמצאו יחד?")</label>
       <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
         <input
           type="text"
@@ -1431,32 +1431,34 @@ export default function Admin() {
                       <input type="checkbox" checked={!!selectedItem.can_have_nearby} onChange={(e) => setFlag("can_have_nearby", e.target.checked)} />
                       "פריטים נוספים בסמוך?"
                     </label>
-                    <label className="flag-chip">
+                  </div>
+                  {/* multi-unit: the option, its max and its wording live in one box so they read as one setting */}
+                  <div className={"units-box" + (selectedItem.multi_unit ? " on" : "")}>
+                    <label className="units-box-head">
                       <input type="checkbox" checked={!!selectedItem.multi_unit} onChange={(e) => setUnits(e.target.checked, selectedItem.max_units || 5)} />
                       אפשר לדווח כמה יחידות, כל אחת עם תיאור משלה
-                      {selectedItem.multi_unit && (
-                        <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }} onClick={(e) => e.preventDefault()}>
-                          (עד
+                    </label>
+                    {selectedItem.multi_unit && (
+                      <div className="units-box-body">
+                        <label style={{ display: "flex", alignItems: "center", gap: 6, margin: 0 }}>
+                          מספר יחידות מקסימלי:
                           <input
                             type="number"
                             min={2}
                             max={20}
                             value={selectedItem.max_units || 5}
                             onChange={(e) => setUnits(true, Number(e.target.value))}
-                            style={{ width: 56, padding: "2px 4px" }}
+                            style={{ width: 64, padding: "4px 6px" }}
                           />
-                          )
-                        </span>
-                      )}
-                    </label>
+                        </label>
+                        <UnitsPromptField
+                          key={selectedItem.id}
+                          initial={selectedItem.units_prompt || ""}
+                          onSave={(text) => setUnits(true, selectedItem.max_units || 5, text)}
+                        />
+                      </div>
+                    )}
                   </div>
-                  {selectedItem.multi_unit && (
-                    <UnitsPromptField
-                      key={selectedItem.id}
-                      initial={selectedItem.units_prompt || ""}
-                      onSave={(text) => setUnits(true, selectedItem.max_units || 5, text)}
-                    />
-                  )}
                 </div>
 
                 <ItemContainersEditor item={selectedItem} items={visibleItems} />

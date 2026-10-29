@@ -234,3 +234,8 @@ textarea{resize:vertical;min-height:72px;line-height:1.5}
 .loading{display:flex;align-items:center;gap:8px;padding:10px 8px;color:var(--text2);font-size:13px}
 .spinner{width:18px;height:18px;border:3px solid var(--pr-l);border-top-color:var(--pr);border-radius:50%;animation:spin .8s linear infinite;flex-shrink:0}
 @keyframes spin{to{transform:rotate(360deg)}}
+.units-box{margin-top:8px;border:1px solid var(--border);border-radius:var(--r);background:var(--white)}
+.units-box.on{border:2px solid var(--pr-b);background:var(--pr-l)}
+.units-box-head{display:flex;align-items:center;gap:7px;padding:10px 12px;margin:0;font-size:13px;font-weight:600;color:var(--text);cursor:pointer}
+.units-box-head input{width:auto;margin:0}
+.units-box-body{padding:4px 12px 12px 12px;border-top:1px dashed var(--pr-b);display:flex;flex-direction:column;gap:6px;font-size:13px}
