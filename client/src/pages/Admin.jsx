@@ -994,6 +994,7 @@ function BulkAddPanel({ items, onClose }) {
 
 export default function Admin() {
   const [items, setItems] = useState([]);
+  const [itemsLoaded, setItemsLoaded] = useState(false); // the first load can take a while when the server wakes up
   const [universal, setUniversal] = useState([]);
   const [categories, setCategories] = useState([]);
   const [selectedItem, setSelectedItem] = useState(null);
@@ -1006,7 +1007,7 @@ export default function Admin() {
   const [newItemName, setNewItemName] = useState("");
   const [bulkOpen, setBulkOpen] = useState(false);
 
-  function loadItems() { api.adminListItems().then(setItems); }
+  function loadItems() { return api.adminListItems().then((r) => { setItems(r); setItemsLoaded(true); }); }
   function loadUniversal() { api.adminGetUniversalAttributes().then(setUniversal); }
   useEffect(() => {
     loadItems();
@@ -1275,7 +1276,8 @@ export default function Admin() {
                   ))}
                 </div>
               ))}
-              {!Object.keys(grouped).length && <p className="muted" style={{ padding: 8 }}>לא נמצאו פריטים.</p>}
+              {!itemsLoaded && <div className="loading"><span className="spinner" /> טוען פריטים...</div>}
+              {itemsLoaded && !Object.keys(grouped).length && <p className="muted" style={{ padding: 8 }}>לא נמצאו פריטים.</p>}
             </div>
           </div>
           <div className="admin-section">

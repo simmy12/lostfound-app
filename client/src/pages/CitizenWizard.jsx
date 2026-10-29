@@ -394,6 +394,7 @@ function ItemPicker({ categories, searchLabel = "איזה פריט?", onSelect, 
         <div className="q-block">
           <label>{searchLabel}</label>
           <input type="text" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="למשל: מעיל, ארנק, משקפיים..." autoFocus />
+          {query.trim() && searching && <div className="loading"><span className="spinner" /> מחפש...</div>}
           {searchResults.length > 0 && (
             <div className="opts">
               {searchResults.map((it) => (

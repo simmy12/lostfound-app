@@ -231,3 +231,6 @@ textarea{resize:vertical;min-height:72px;line-height:1.5}
 .drag-handle{cursor:grab;font-size:20px;color:var(--text2);padding:0 4px;user-select:none;touch-action:none}
 .q-card.dragging{opacity:.4;border-style:dashed}
 .item-header{display:flex;justify-content:space-between;align-items:center;gap:10px}
+.loading{display:flex;align-items:center;gap:8px;padding:10px 8px;color:var(--text2);font-size:13px}
+.spinner{width:18px;height:18px;border:3px solid var(--pr-l);border-top-color:var(--pr);border-radius:50%;animation:spin .8s linear infinite;flex-shrink:0}
+@keyframes spin{to{transform:rotate(360deg)}}
