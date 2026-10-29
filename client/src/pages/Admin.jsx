@@ -542,7 +542,7 @@ function CopyQuestionsPanel({ item, items, onDone }) {
   );
 }
 
-const DETAIL_KIND_LABEL = { "": "בלי פירוט", text: "שדה טקסט", letters_or_text: "אותיות (תיבה לכל אות) או טקסט" };
+const DETAIL_KIND_LABEL = { "": "בלי פירוט", text: "שדה טקסט", letters_or_text: "אותיות (עד 5, תיבה לכל אות) או שם" };
 
 // an answer's follow-up settings: what opens when a reporter picks it
 function DetailSettings({ v, onSave, onClose }) {

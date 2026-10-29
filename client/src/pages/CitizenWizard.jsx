@@ -33,9 +33,9 @@ function isYesNo(attr) {
 }
 
 // Follow-up for an answer the admin marked "מבקש פירוט" (detail_kind). 'text' is a plain field;
-// 'letters_or_text' first asks "only letters?" — yes gives one box per letter so it's clear exactly
+// 'letters_or_text' first asks "letters or a name?" — letters gives one box per letter (up to 5) so it's clear exactly
 // which letters were written, no gives a plain field. The detail object lives in value.details[valueId].
-const MAX_LETTERS = 10;
+const MAX_LETTERS = 5;
 
 function DetailField({ v, detail, onChange }) {
   const d = detail || {};
@@ -44,10 +44,10 @@ function DetailField({ v, detail, onChange }) {
     const setLetter = (i, ch) => onChange({ ...d, mode: "letters", letters: letters.map((x, j) => (j === i ? ch.slice(-1) : x)) });
     return (
       <div className="detail-box">
-        <div className="q-label" style={{ marginBottom: 6 }}>{v.detail_prompt || "לפרט"}: האם רק אותיות?</div>
+        <div className="q-label" style={{ marginBottom: 6 }}>{v.detail_prompt || "לפרט"} אותיות או שם?</div>
         <div className="opts" style={{ marginBottom: 8 }}>
-          <button type="button" className={"opt-btn" + (d.mode === "letters" ? " sel" : "")} onClick={() => onChange({ ...d, mode: "letters", letters })}>כן, רק אותיות</button>
-          <button type="button" className={"opt-btn" + (d.mode === "text" ? " sel" : "")} onClick={() => onChange({ ...d, mode: "text" })}>לא</button>
+          <button type="button" className={"opt-btn" + (d.mode === "letters" ? " sel" : "")} onClick={() => onChange({ ...d, mode: "letters", letters })}>רק אותיות</button>
+          <button type="button" className={"opt-btn" + (d.mode === "text" ? " sel" : "")} onClick={() => onChange({ ...d, mode: "text" })}>שם</button>
         </div>
         {d.mode === "letters" && (
           <>
@@ -71,11 +71,11 @@ function DetailField({ v, detail, onChange }) {
               {letters.length < MAX_LETTERS && <button type="button" className="btn btn-sm" onClick={() => onChange({ ...d, mode: "letters", letters: [...letters, ""] })}>+ אות</button>}
               {letters.length > 1 && <button type="button" className="btn btn-sm" onClick={() => onChange({ ...d, mode: "letters", letters: letters.slice(0, -1) })}>− אות</button>}
             </div>
-            <p className="muted" style={{ fontSize: 12, margin: "4px 0 0" }}>אות אחת בכל תיבה, לפי הסדר.</p>
+            <p className="muted" style={{ fontSize: 12, margin: "4px 0 0" }}>אות אחת בכל תיבה, לפי הסדר (עד 5 אותיות).</p>
           </>
         )}
         {d.mode === "text" && (
-          <input type="text" placeholder="מה כתוב?" value={d.text || ""} onChange={(e) => onChange({ ...d, mode: "text", text: e.target.value })} />
+          <input type="text" placeholder="מה השם שכתוב?" value={d.text || ""} onChange={(e) => onChange({ ...d, mode: "text", text: e.target.value })} />
         )}
       </div>
     );
