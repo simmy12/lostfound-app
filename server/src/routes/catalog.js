@@ -48,10 +48,16 @@ router.get("/items/search", asyncHandler(async (req, res) => {
   res.json(r.rows);
 }));
 
-// the curated, fixed list of "things something could be found inside" — the only options offered
-// in the "בתוך מה היה?" flow, deliberately not the full catalog.
-router.get("/items/containers", asyncHandler(async (req, res) => {
-  const r = await pool.query(`SELECT id, name FROM items WHERE is_common_container = true AND NOT is_hidden ORDER BY container_order, name`);
+// the "בתוך מה היה?" options for one item — its own list, set by the admin per item (hidden
+// items left out). Empty when the admin hasn't set one; the wizard then falls back to search.
+router.get("/items/:itemId/containers", asyncHandler(async (req, res) => {
+  const itemId = parseId(req, res, "itemId");
+  if (itemId == null) return;
+  const r = await pool.query(
+    `SELECT i.id, i.name FROM item_containers ic JOIN items i ON i.id = ic.container_item_id
+     WHERE ic.item_id = $1 AND NOT i.is_hidden ORDER BY ic.display_order, i.name`,
+    [itemId]
+  );
   res.json(r.rows);
 }));
 

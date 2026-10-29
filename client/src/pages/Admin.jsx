@@ -105,88 +105,90 @@ function InlineEdit({ initial, onSave, onCancel, width = 140 }) {
   );
 }
 
-// The "בתוך מה היה?" list: which items a reporter can pick as "it was inside this", their order
-// (drag) and wording (renames the item itself, everywhere). Items join the list from here or
-// from an item's "שאלות מיוחדות".
-function ContainersPanel({ items, onClose, onCatalogChanged }) {
+// This item's own "בתוך מה היה?" list: which items a reporter can pick as "it was inside this",
+// in what order (drag). Add, remove, or replace it with a copy of another item's list. Every change
+// saves the whole list at once.
+function ItemContainersEditor({ item, items }) {
   const [list, setList] = useState([]);
-  const [editingId, setEditingId] = useState(null);
   const [addId, setAddId] = useState("");
+  const [copyFrom, setCopyFrom] = useState("");
+  const [copyQ, setCopyQ] = useState("");
+  const [msg, setMsg] = useState(null);
 
-  function load() { api.adminContainers().then(setList); }
-  useEffect(load, []);
+  useEffect(() => {
+    setMsg(null);
+    api.adminItemContainers(item.id).then(setList);
+  }, [item.id]);
 
-  const { shown, startDrag, dragId } = usePointerSort(list, "containers", async (next) => {
+  async function save(next) {
     setList(next);
-    await api.adminReorderContainers(next.map((x) => x.id));
-  });
-
-  async function rename(it, name) {
-    if (!name || name === it.name) return setEditingId(null);
-    await api.adminRenameItem(it.id, name);
-    setEditingId(null);
-    load();
-    onCatalogChanged();
+    await api.adminSetItemContainers(item.id, next.map((x) => x.id));
   }
+
+  const { shown, startDrag, dragId } = usePointerSort(list, "item-containers", save);
 
   async function remove(it) {
-    if (!window.confirm(`האם את/ה בטוח/ה שברצונך להסיר את "${it.name}" מהרשימה "בתוך מה היה?"?\n(הפריט עצמו נשאר בקטלוג)`)) return;
-    await api.adminSetItemFlags(it.id, { is_common_container: false });
-    load();
-    onCatalogChanged();
+    if (!window.confirm(`האם את/ה בטוח/ה שברצונך להסיר את "${it.name}" מהרשימה של "${item.name}"?`)) return;
+    save(list.filter((x) => x.id !== it.id));
   }
 
-  async function add() {
-    if (!addId) return;
-    await api.adminSetItemFlags(Number(addId), { is_common_container: true });
+  function add() {
+    const it = items.find((x) => x.id === Number(addId));
+    if (!it) return;
+    save([...list, { id: it.id, name: it.name }]);
     setAddId("");
-    load();
-    onCatalogChanged();
+  }
+
+  async function copy() {
+    const src = items.find((x) => x.id === Number(copyFrom));
+    if (!src) return;
+    const srcList = (await api.adminItemContainers(src.id)).filter((x) => x.id !== item.id);
+    if (!window.confirm(`להחליף את הרשימה של "${item.name}" ברשימה של "${src.name}" (${srcList.length} פריטים)?`)) return;
+    await save(srcList);
+    setCopyFrom("");
+    setMsg(`✓ הועתקה הרשימה של "${src.name}"`);
   }
 
   const inList = new Set(list.map((x) => x.id));
+  const query = copyQ.trim();
   return (
-    <div className="admin-panel">
-      <div className="admin-panel-h" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <span>📦 הרשימה "בתוך מה היה?"</span>
-        <button className="btn btn-sm" onClick={onClose}>סגור</button>
+    <div style={{ marginBottom: 18, paddingBottom: 16, borderBottom: "1px solid var(--border)" }}>
+      <label>רשימת "בתוך מה היה?" של {item.name}</label>
+      <p className="muted" style={{ margin: "0 0 8px", fontSize: 12 }}>
+        מה המשתמש יכול לבחור כשהוא עונה ש{item.name} היה בתוך משהו. גררו לשינוי הסדר (העליון מוצג ראשון).
+        {!item.can_be_contained && " שימו לב: השאלה \"האם היה בתוך משהו?\" כבוייה לפריט הזה (בשאלות מיוחדות)."}
+      </p>
+      <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 10 }}>
+        {shown.map((it, i) => (
+          <div
+            key={it.id}
+            data-sort-group="item-containers"
+            data-sort-id={it.id}
+            onPointerDown={(e) => startDrag(e, it)}
+            className={"container-row" + (dragId === it.id ? " dragging" : "")}
+          >
+            <span className="muted" style={{ width: 22 }}>{i + 1}.</span>
+            <span style={{ flex: 1, fontWeight: 600 }}>{it.name}{it.is_hidden && <span className="muted"> (מוסתר)</span>}</span>
+            <button type="button" className="btn btn-sm btn-soft" onClick={() => remove(it)}>הסר</button>
+          </div>
+        ))}
+        {!list.length && <p className="muted" style={{ margin: 0 }}>הרשימה ריקה. המשתמש יחפש בכל הפריטים.</p>}
       </div>
-      <div className="admin-section">
-        <p className="muted" style={{ marginTop: 0 }}>
-          זו הרשימה שהמשתמש רואה כשהוא עונה שהפריט היה בתוך משהו. אפשר לגרור כדי לשנות את הסדר (העליון מוצג ראשון),
-          לשנות שם (✎) או להסיר. שינוי שם משנה את שם הפריט בכל המערכת.
-        </p>
-        <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 14 }}>
-          {shown.map((it, i) => (
-            <div
-              key={it.id}
-              data-sort-group="containers"
-              data-sort-id={it.id}
-              onPointerDown={(e) => editingId !== it.id && startDrag(e, it)}
-              className={"container-row" + (dragId === it.id ? " dragging" : "")}
-            >
-              <span className="muted" style={{ width: 22 }}>{i + 1}.</span>
-              {editingId === it.id ? (
-                <InlineEdit initial={it.name} onSave={(n) => rename(it, n)} onCancel={() => setEditingId(null)} width={200} />
-              ) : (
-                <>
-                  <span style={{ flex: 1, fontWeight: 600 }}>{it.name}</span>
-                  <button type="button" className="btn btn-sm btn-soft" onClick={() => setEditingId(it.id)}>✎ שינוי שם</button>
-                  <button type="button" className="btn btn-sm btn-soft" onClick={() => remove(it)}>הסר מהרשימה</button>
-                </>
-              )}
-            </div>
-          ))}
-          {!list.length && <p className="muted">הרשימה ריקה.</p>}
-        </div>
-        <label>הוספת פריט לרשימה</label>
-        <div style={{ display: "flex", gap: 6 }}>
-          <select value={addId} onChange={(e) => setAddId(e.target.value)}>
-            <option value="">— בחר/י פריט —</option>
-            {items.filter((it) => !inList.has(it.id)).map((it) => <option key={it.id} value={it.id}>{it.name} ({it.sub_name})</option>)}
-          </select>
-          <button className="btn btn-sm btn-pr" style={{ whiteSpace: "nowrap", flexShrink: 0 }} onClick={add} disabled={!addId}>+ הוסף</button>
-        </div>
+      <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
+        <select value={addId} onChange={(e) => setAddId(e.target.value)}>
+          <option value="">— הוספת פריט לרשימה —</option>
+          {items.filter((x) => x.id !== item.id && !inList.has(x.id)).map((x) => <option key={x.id} value={x.id}>{x.name} ({x.sub_name})</option>)}
+        </select>
+        <button className="btn btn-sm btn-pr" style={{ whiteSpace: "nowrap", flexShrink: 0 }} onClick={add} disabled={!addId}>+ הוסף</button>
+      </div>
+      <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+        <input type="text" placeholder="חיפוש פריט להעתקה..." value={copyQ} onChange={(e) => setCopyQ(e.target.value)} style={{ flex: "1 1 140px" }} />
+        <select value={copyFrom} onChange={(e) => setCopyFrom(e.target.value)} style={{ flex: "2 1 200px" }}>
+          <option value="">— 📋 העתק רשימה מפריט אחר —</option>
+          {items.filter((x) => x.id !== item.id && (!query || x.name.includes(query))).map((x) => <option key={x.id} value={x.id}>{x.name} ({x.sub_name})</option>)}
+        </select>
+        <button className="btn btn-sm" style={{ whiteSpace: "nowrap", flexShrink: 0 }} onClick={copy} disabled={!copyFrom}>העתק</button>
+        {msg && <span style={{ color: "#15803d", fontWeight: 600, fontSize: 13 }}>{msg}</span>}
       </div>
     </div>
   );
@@ -1003,7 +1005,6 @@ export default function Admin() {
   const [newItemSub, setNewItemSub] = useState(null);
   const [newItemName, setNewItemName] = useState("");
   const [bulkOpen, setBulkOpen] = useState(false);
-  const [containersOpen, setContainersOpen] = useState(false);
 
   function loadItems() { api.adminListItems().then(setItems); }
   function loadUniversal() { api.adminGetUniversalAttributes().then(setUniversal); }
@@ -1017,7 +1018,6 @@ export default function Admin() {
     setSelectedItem(item);
     setSelectedUniversalId(null);
     setBulkOpen(false);
-    setContainersOpen(false);
     const a = await api.adminGetItemAttributes(item.id);
     setAttrs(a);
   }
@@ -1026,7 +1026,6 @@ export default function Admin() {
     setSelectedUniversalId(id);
     setSelectedItem(null);
     setBulkOpen(false);
-    setContainersOpen(false);
   }
 
   async function reloadAfterCategoryChange(refreshCategories) {
@@ -1335,21 +1334,12 @@ export default function Admin() {
             <NewAttributeForm onSubmit={addUniversalAttribute} />
           </div>
 
-          <div className="admin-section" style={{ borderTop: "1px solid var(--border)" }}>
-            <button
-              className="admin-add-btn"
-              onClick={() => { setContainersOpen(true); setBulkOpen(false); setSelectedItem(null); setSelectedUniversalId(null); }}
-            >
-              📦 עריכת הרשימה "בתוך מה היה?"
-            </button>
-          </div>
         </div>
 
         <div style={{ minWidth: 0 }}>
           {bulkOpen && <BulkAddPanel items={visibleItems} onClose={() => setBulkOpen(false)} />}
-          {containersOpen && <ContainersPanel items={visibleItems} onClose={() => setContainersOpen(false)} onCatalogChanged={loadItems} />}
 
-          {!bulkOpen && !containersOpen && !selectedItem && !selectedUniversal && (
+          {!bulkOpen && !selectedItem && !selectedUniversal && (
             <div className="admin-panel">
               <div className="admin-empty">
                 <div className="admin-empty-icon">🗂️</div>
@@ -1410,10 +1400,6 @@ export default function Admin() {
                       "פריטים נוספים בסמוך?"
                     </label>
                     <label className="flag-chip">
-                      <input type="checkbox" checked={!!selectedItem.is_common_container} onChange={(e) => setFlag("is_common_container", e.target.checked)} />
-                      מופיע ברשימה "בתוך מה היה?"
-                    </label>
-                    <label className="flag-chip">
                       <input type="checkbox" checked={!!selectedItem.multi_unit} onChange={(e) => setUnits(e.target.checked, selectedItem.max_units || 5)} />
                       אפשר לדווח כמה יחידות, כל אחת עם תיאור משלה
                       {selectedItem.multi_unit && (
@@ -1433,6 +1419,8 @@ export default function Admin() {
                     </label>
                   </div>
                 </div>
+
+                <ItemContainersEditor item={selectedItem} items={visibleItems} />
 
                 <CopyQuestionsPanel item={selectedItem} items={visibleItems} onDone={() => api.adminGetItemAttributes(selectedItem.id).then(setAttrs)} />
                 {!attrs.length && <p className="muted" style={{ marginBottom: 12 }}>לפריט זה אין שאלות מוגדרות.</p>}

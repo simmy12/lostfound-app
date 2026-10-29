@@ -419,11 +419,15 @@ function ItemPicker({ categories, searchLabel = "איזה פריט?", onSelect, 
   );
 }
 
-// A short, fixed list of "things something could be found inside" (curated in the database, not
-// derived from a category) — the only options offered by the "was this inside something?" flow.
-function ContainerPicker({ onSelect, selectedItemId }) {
-  const [options, setOptions] = useState([]);
-  useEffect(() => { api.getContainers().then(setOptions); }, []);
+// The "was this inside something?" options for the reported item — that item's own list, set by
+// the admin per item. When the admin hasn't set a list for it, the regular catalog search is offered.
+function ContainerPicker({ forItemId, categories, onSelect, selectedItemId }) {
+  const [options, setOptions] = useState(null);
+  useEffect(() => {
+    if (forItemId) api.getItemContainers(forItemId).then(setOptions);
+  }, [forItemId]);
+  if (options === null) return null;
+  if (!options.length) return <ItemPicker categories={categories} selectedItemId={selectedItemId} onSelect={onSelect} />;
   return (
     <div className="q-block">
       <label>בחר/י מהרשימה</label>
@@ -446,11 +450,11 @@ function ContainerPicker({ onSelect, selectedItemId }) {
 // A self-contained item picker + attributes card, used for container / contents / nearby items.
 // Reports its current {item_id, item_answers} up to the parent on every change.
 // containerMode: when set (the "was this inside something?" flow), the reporter picks from the
-// curated ContainerPicker list above instead of the full category/search ItemPicker.
+// reported item's own ContainerPicker list (containerFor) instead of the full ItemPicker.
 // allowNestedContents: when set (also only the "was this inside something?" flow), and the chosen
 // container item can itself contain things, offer adding up to 3 more items found in that same
 // container (the original item already takes up one of its 4 slots).
-function SubReportPicker({ categories, label, onChange, onRemove, containerMode, allowNestedContents, originalItemName }) {
+function SubReportPicker({ categories, label, onChange, onRemove, containerMode, containerFor, allowNestedContents, originalItemName }) {
   const [item, setItem] = useState(null); // {id, name}
   const [itemMeta, setItemMeta] = useState(null);
   const [itemAttrs, setItemAttrs] = useState([]);
@@ -493,7 +497,7 @@ function SubReportPicker({ categories, label, onChange, onRemove, containerMode,
         </div>
 
         {containerMode ? (
-          <ContainerPicker selectedItemId={item?.id} onSelect={setItem} />
+          <ContainerPicker forItemId={containerFor} categories={categories} selectedItemId={item?.id} onSelect={setItem} />
         ) : (
           <ItemPicker categories={categories} selectedItemId={item?.id} onSelect={setItem} />
         )}
@@ -532,7 +536,7 @@ function SubReportPicker({ categories, label, onChange, onRemove, containerMode,
   );
 }
 
-function LinkedItemsList({ title, prompt, hint, items, setItems, categories, containerMode, allowNestedContents, originalItemName, maxItems = MAX_LINKED, minItems = 0, startNumber = 1 }) {
+function LinkedItemsList({ title, prompt, hint, items, setItems, categories, containerMode, containerFor, allowNestedContents, originalItemName, maxItems = MAX_LINKED, minItems = 0, startNumber = 1 }) {
   const [asking, setAsking] = useState(items.length > 0 ? true : null);
 
   // on "yes", open the pickers straight away — one for a single-item list (e.g. the container),
@@ -572,6 +576,7 @@ function LinkedItemsList({ title, prompt, hint, items, setItems, categories, con
               categories={categories}
               label={maxItems === 1 ? title : `${title} ${startNumber + i}`}
               containerMode={containerMode}
+              containerFor={containerFor}
               allowNestedContents={allowNestedContents}
               originalItemName={originalItemName}
               onChange={(val) => setItems((prev) => prev.map((x, idx) => (idx === i ? { ...x, value: val } : x)))}
@@ -826,6 +831,7 @@ export default function CitizenWizard({ repMode = false }) {
                 title="בתוך מה היה?"
                 prompt={`האם ה${itemName} היה בתוך משהו (תיק, מזוודה וכד')?`}
                 containerMode
+                containerFor={item?.id}
                 allowNestedContents
                 originalItemName={itemName}
                 maxItems={1}

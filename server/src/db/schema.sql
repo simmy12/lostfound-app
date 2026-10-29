@@ -39,6 +39,14 @@ CREATE TABLE items (
   is_other_placeholder BOOLEAN NOT NULL DEFAULT false -- the generic "אחר" item; picking it requires free text and queues the report for admin review
 );
 
+-- each item's own "בתוך מה היה?" list (admin-set; new items start empty)
+CREATE TABLE item_containers (
+  item_id           INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+  container_item_id INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+  display_order     INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (item_id, container_item_id)
+);
+
 -- ===== Attributes (dynamic question bank) =====
 
 CREATE TABLE attributes (

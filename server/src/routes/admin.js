@@ -469,20 +469,29 @@ router.post("/admin/categories/subs/:id/delete", asyncHandler(async (req, res) =
   res.json({ ok: true, moved: n });
 }));
 
-// ---- the "בתוך מה היה?" list: the items a reporter can pick as "it was inside this" ----
+// ---- each item's own "בתוך מה היה?" list: the items a reporter can pick as "it was inside this" ----
 
-router.get("/admin/containers", asyncHandler(async (req, res) => {
-  const r = await pool.query(`SELECT id, name FROM items WHERE is_common_container AND NOT is_hidden ORDER BY container_order, name`);
+router.get("/admin/items/:id/containers", asyncHandler(async (req, res) => {
+  const r = await pool.query(
+    `SELECT i.id, i.name, i.is_hidden FROM item_containers ic JOIN items i ON i.id = ic.container_item_id
+     WHERE ic.item_id = $1 ORDER BY ic.display_order, i.name`,
+    [req.params.id]
+  );
   res.json(r.rows);
 }));
 
-router.put("/admin/containers/order", asyncHandler(async (req, res) => {
-  const { item_ids } = req.body;
-  if (!Array.isArray(item_ids)) return res.status(400).json({ error: "item_ids is required" });
-  await pool.query(
-    `UPDATE items i SET container_order = o.pos FROM unnest($1::int[]) WITH ORDINALITY AS o(id, pos) WHERE i.id = o.id`,
-    [item_ids]
-  );
+// replace an item's whole list (adds, removals and order in one go): item_ids in display order
+router.put("/admin/items/:id/containers", asyncHandler(async (req, res) => {
+  const ids = (req.body.item_ids || []).map(Number).filter((x) => Number.isInteger(x) && x !== Number(req.params.id));
+  await inTransaction(async (db) => {
+    await db.query(`DELETE FROM item_containers WHERE item_id = $1`, [req.params.id]);
+    await db.query(
+      `INSERT INTO item_containers (item_id, container_item_id, display_order)
+       SELECT $1, o.id, o.pos FROM unnest($2::int[]) WITH ORDINALITY AS o(id, pos)
+       ON CONFLICT DO NOTHING`,
+      [req.params.id, ids]
+    );
+  });
   res.json({ ok: true });
 }));
 

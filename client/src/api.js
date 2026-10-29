@@ -17,7 +17,7 @@ export const api = {
   getItems: (subId) => req(`/subs/${subId}/items`),
   getItem: (itemId) => req(`/items/${itemId}`),
   searchItems: (q) => req(`/items/search?q=${encodeURIComponent(q)}`),
-  getContainers: () => req(`/items/containers`),
+  getItemContainers: (itemId) => req(`/items/${itemId}/containers`),
   getItemAttributes: (itemId) => req(`/items/${itemId}/attributes`),
   getUniversalAttributes: () => req("/universal-attributes"),
 
@@ -52,8 +52,9 @@ export const api = {
   adminRenameValue: (valueId, value) =>
     req(`/admin/attribute-values/${valueId}`, { method: "PUT", body: JSON.stringify({ value }) }),
   adminRenameItem: (itemId, name) => req(`/admin/items/${itemId}/name`, { method: "PUT", body: JSON.stringify({ name }) }),
-  adminContainers: () => req("/admin/containers"),
-  adminReorderContainers: (itemIds) => req("/admin/containers/order", { method: "PUT", body: JSON.stringify({ item_ids: itemIds }) }),
+  adminItemContainers: (itemId) => req(`/admin/items/${itemId}/containers`),
+  adminSetItemContainers: (itemId, itemIds) =>
+    req(`/admin/items/${itemId}/containers`, { method: "PUT", body: JSON.stringify({ item_ids: itemIds }) }),
   adminDeleteValues: (ids) => req("/admin/attribute-values/delete", { method: "POST", body: JSON.stringify({ ids }) }),
   adminSetValueDetail: (valueId, detailKind, detailPrompt) =>
     req(`/admin/attribute-values/${valueId}/detail`, { method: "PUT", body: JSON.stringify({ detail_kind: detailKind, detail_prompt: detailPrompt }) }),
