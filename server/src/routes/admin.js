@@ -48,6 +48,16 @@ router.put("/admin/attributes/:id/name", asyncHandler(async (req, res) => {
 // or off with its "אפשר אחר" checkbox
 const isOtherText = (v) => String(v).trim().startsWith("אחר");
 
+// any answer mentioning "עם שם" ("with a name") asks for the name when picked, unless the admin
+// already set its follow-up — applied whenever answers are added, reworded or copied
+async function askNameWhereNeeded(db, attributeId) {
+  await db.query(
+    `UPDATE attribute_values SET detail_kind = 'text', detail_prompt = 'מה השם?'
+     WHERE attribute_id = $1 AND detail_kind IS NULL AND value LIKE '%עם שם%'`,
+    [attributeId]
+  );
+}
+
 async function createAttribute(db, { name, input_type, scope, values, max_select = 2 }) {
   const r = await db.query(
     `INSERT INTO attributes (name, input_type, scope, max_select) VALUES ($1, $2, $3, $4) RETURNING id`,
@@ -58,6 +68,7 @@ async function createAttribute(db, { name, input_type, scope, values, max_select
   for (let i = 0; i < clean.length; i++) {
     await db.query(`INSERT INTO attribute_values (attribute_id, value, display_order) VALUES ($1,$2,$3)`, [id, clean[i], i]);
   }
+  await askNameWhereNeeded(db, id);
   return id;
 }
 
@@ -239,6 +250,7 @@ router.post("/admin/attributes/:attributeId/values/copy", asyncHandler(async (re
      RETURNING id`,
     [req.params.attributeId, from_attribute_id]
   );
+  await askNameWhereNeeded(pool, req.params.attributeId);
   res.json({ ok: true, count: r.rowCount });
 }));
 
@@ -270,6 +282,7 @@ router.post("/admin/attributes/:attributeId/values", asyncHandler(async (req, re
      ON CONFLICT (attribute_id, value) DO UPDATE SET hidden = false RETURNING id`,
     [req.params.attributeId, value]
   );
+  await askNameWhereNeeded(pool, req.params.attributeId);
   res.status(201).json(r.rows[0] || {});
 }));
 
@@ -294,8 +307,9 @@ router.put("/admin/attribute-values/:id", asyncHandler(async (req, res) => {
   if (!value) return res.status(400).json({ error: "value is required" });
   if (isOtherText(value)) return res.status(400).json({ error: "\"אחר\" אינו תשובה רגילה" });
   try {
-    const r = await pool.query(`UPDATE attribute_values SET value = $1 WHERE id = $2 RETURNING id`, [value, req.params.id]);
+    const r = await pool.query(`UPDATE attribute_values SET value = $1 WHERE id = $2 RETURNING attribute_id`, [value, req.params.id]);
     if (!r.rows.length) return res.status(404).json({ error: "not found" });
+    await askNameWhereNeeded(pool, r.rows[0].attribute_id);
   } catch (e) {
     if (e.code === "23505") return res.status(400).json({ error: "תשובה בשם הזה כבר קיימת ברשימה" });
     throw e;

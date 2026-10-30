@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { api } from "../api";
 import { formatAnswerValue } from "../format";
 import { ISRAELI_CITIES } from "../cities";
+import { hebrewCalendar, hebrewLabel } from "../hebrewDate";
 
 const STEPS = ["פריט", "פרטים", "מיקום ותאריך", "סיכום"];
 const MAX_LINKED = 4;
@@ -98,10 +99,87 @@ function detailText(d) {
   return (d.text || "").trim();
 }
 
+// Event date, entered on the Gregorian or the Hebrew calendar — whichever the reporter prefers.
+// Either way it's saved as one ISO date, so reports entered either way match each other; the
+// other calendar is shown underneath so the reporter can check it.
+function DateField({ value, onChange }) {
+  const [calendar, setCalendar] = useState(value?.calendar || "gregorian");
+  const iso = value?.free_text || "";
+  const cal = calendar === "hebrew" ? hebrewCalendar() : null;
+  const hp = iso && cal ? (() => {
+    for (const y of cal) for (const m of y.months) for (const d of m.days) if (d.iso === iso) return { y, m, d };
+    return null;
+  })() : null;
+  const [hy, setHy] = useState(null);
+  const [hm, setHm] = useState(null);
+  const yearObj = cal && (cal.find((y) => y.year === (hp?.y.year ?? hy)) || null);
+  const monthObj = yearObj && (yearObj.months.find((m) => m.name === (hp?.m.name ?? hm)) || null);
+
+  return (
+    <div>
+      <div className="opts" style={{ marginBottom: 8 }}>
+        <button type="button" className={"opt-btn" + (calendar === "gregorian" ? " sel" : "")} onClick={() => setCalendar("gregorian")}>תאריך לועזי</button>
+        <button type="button" className={"opt-btn" + (calendar === "hebrew" ? " sel" : "")} onClick={() => setCalendar("hebrew")}>תאריך עברי</button>
+      </div>
+      {calendar === "gregorian" ? (
+        <input type="date" value={iso} max={new Date().toISOString().slice(0, 10)} onChange={(e) => onChange(e.target.value, "gregorian")} />
+      ) : (
+        <div className="hebrew-date">
+          <select value={hp?.d.day ?? ""} disabled={!monthObj} onChange={(e) => onChange(monthObj.days.find((d) => d.day === Number(e.target.value))?.iso || "", "hebrew")}>
+            <option value="">יום</option>
+            {monthObj?.days.map((d) => <option key={d.day} value={d.day}>{d.label}</option>)}
+          </select>
+          <select value={hp?.m.name ?? hm ?? ""} disabled={!yearObj} onChange={(e) => { setHy(yearObj.year); setHm(e.target.value); onChange("", "hebrew"); }}>
+            <option value="">חודש</option>
+            {yearObj?.months.map((m) => <option key={m.name} value={m.name}>{m.name}</option>)}
+          </select>
+          <select value={hp?.y.year ?? hy ?? ""} onChange={(e) => { setHy(Number(e.target.value)); setHm(null); onChange("", "hebrew"); }}>
+            <option value="">שנה</option>
+            {cal.map((y) => <option key={y.year} value={y.year}>{y.label}</option>)}
+          </select>
+        </div>
+      )}
+      {iso && (
+        <p className="muted" style={{ margin: "6px 0 0", fontSize: 13 }}>
+          {calendar === "hebrew" ? `בלועזי: ${new Date(iso + "T12:00:00").toLocaleDateString("he-IL")}` : `בעברי: ${hebrewLabel(iso)}`}
+        </p>
+      )}
+    </div>
+  );
+}
+
+// Up to MAX_CITIES cities, each with autocomplete from the national list plus the admin's own
+// additions (the question's values). Saved as one answer row per city.
+const MAX_CITIES = 3;
+function CityField({ attr, value, onChange }) {
+  const cities = value?.cities?.length ? value.cities : [""];
+  const set = (next) => onChange({ attribute_id: attr.id, cities: next, free_text: next.map((c) => c.trim()).filter(Boolean).join(", ") });
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+      {cities.map((c, i) => (
+        <div key={i} style={{ display: "flex", gap: 6 }}>
+          <input
+            type="text"
+            list="cities-datalist"
+            value={c}
+            onChange={(e) => set(cities.map((x, j) => (j === i ? e.target.value : x)))}
+            placeholder={i === 0 ? "התחל/י להקליד שם עיר/יישוב..." : "עיר נוספת..."}
+          />
+          {i > 0 && <button type="button" className="btn btn-sm" style={{ flexShrink: 0 }} onClick={() => set(cities.filter((_, j) => j !== i))}>✕</button>}
+        </div>
+      ))}
+      {cities.length < MAX_CITIES && (
+        <button type="button" className="btn btn-sm" style={{ alignSelf: "flex-start" }} onClick={() => set([...cities, ""])}>+ עיר נוספת (עד {MAX_CITIES})</button>
+      )}
+    </div>
+  );
+}
+
 // value shapes stored in an `answers` map (attribute_id -> value):
 //   choice:           { attribute_id, value_ids: [...] (max maxPicks), isOther?, free_text?, details?: {valueId: detail} }
 //   strict yes/no:    { attribute_id, value_id? , isOther?, free_text? }
-//   text/number/date: { attribute_id, free_text }
+//   text/number/date: { attribute_id, free_text }  (date also: calendar — "gregorian" | "hebrew")
+//   city:             { attribute_id, cities: [...], free_text: cities joined (for display/required checks) }
 function AttributeField({ attr, value, onChange }) {
   const showErrors = useContext(ShowErrors);
   const [search, setSearch] = useState("");
@@ -129,8 +207,9 @@ function AttributeField({ attr, value, onChange }) {
     const selected = value?.value_ids || [];
     const isOther = !!value?.isOther;
     const cap = maxPicks(attr);
-    // single choice: a new pick replaces the old one; multi: picks stop at the cap
-    const atCap = cap > 1 && selected.length + (isOther ? 1 : 0) >= cap;
+    // single choice: a new pick replaces the old one; multi: picks stop at the cap. "אחר" stands
+    // alone, so it never counts toward the cap
+    const atCap = cap > 1 && selected.length >= cap;
     const searchable = attr.values.length >= VALUE_SEARCH_MIN;
     const q = search.trim();
     // already-picked answers stay visible while searching, so they can still be un-picked
@@ -154,7 +233,8 @@ function AttributeField({ attr, value, onChange }) {
                 onClick={() => {
                   if (cap === 1) return onChange({ attribute_id: attr.id, value_ids: isSel ? [] : [v.id], details: value?.details });
                   const next = isSel ? selected.filter((id) => id !== v.id) : [...selected, v.id];
-                  onChange({ attribute_id: attr.id, value_ids: next, isOther, free_text: value?.free_text, details: value?.details });
+                  // "אחר" is exclusive — choosing a listed answer drops it
+                  onChange({ attribute_id: attr.id, value_ids: next, details: value?.details });
                 }}
               >
                 {v.value}
@@ -164,9 +244,8 @@ function AttributeField({ attr, value, onChange }) {
           {attr.allow_other !== false && (
             <button
               type="button"
-              disabled={!isOther && atCap}
               className={"opt-btn" + (isOther ? " sel" : "")}
-              onClick={() => onChange({ attribute_id: attr.id, value_ids: cap === 1 ? [] : selected, isOther: !isOther, free_text: value?.free_text, details: value?.details })}
+              onClick={() => onChange({ attribute_id: attr.id, value_ids: isOther ? selected : [], isOther: !isOther, free_text: value?.free_text, details: value?.details })}
             >
               אחר
             </button>
@@ -202,24 +281,10 @@ function AttributeField({ attr, value, onChange }) {
     );
   }
   if (attr.name.includes("תאריך")) {
-    return (
-      <input
-        type="date"
-        value={value?.free_text || ""}
-        onChange={(e) => onChange({ attribute_id: attr.id, free_text: e.target.value })}
-      />
-    );
+    return <DateField value={value} onChange={(iso, calendar) => onChange({ attribute_id: attr.id, free_text: iso, calendar })} />;
   }
   if (attr.name === "עיר") {
-    return (
-      <input
-        type="text"
-        list="cities-datalist"
-        value={value?.free_text || ""}
-        onChange={(e) => onChange({ attribute_id: attr.id, free_text: e.target.value })}
-        placeholder="התחל/י להקליד שם עיר/יישוב..."
-      />
-    );
+    return <CityField attr={attr} value={value} onChange={onChange} />;
   }
   return (
     <input
@@ -236,7 +301,9 @@ function flattenAnswers(answers) {
   const out = [];
   for (const a of Object.values(answers)) {
     if (!a) continue;
-    if (a.value_ids) {
+    if (a.cities) {
+      for (const c of a.cities.map((x) => x.trim()).filter(Boolean)) out.push({ attribute_id: a.attribute_id, free_text: c });
+    } else if (a.value_ids) {
       for (const vid of a.value_ids) out.push({ attribute_id: a.attribute_id, value_id: vid, free_text: detailText(a.details?.[vid]) || undefined });
       if (a.isOther && a.free_text) out.push({ attribute_id: a.attribute_id, free_text: a.free_text });
     } else if (a.isOther) {
@@ -719,7 +786,7 @@ export default function CitizenWizard({ repMode = false }) {
         </div>
       )}
       <datalist id="cities-datalist">
-        {ISRAELI_CITIES.map((c) => <option key={c} value={c} />)}
+        {[...ISRAELI_CITIES, ...(universalAttrs.find((a) => a.name === "עיר")?.values || []).map((v) => v.value).filter((v) => !ISRAELI_CITIES.includes(v))].map((c) => <option key={c} value={c} />)}
       </datalist>
       <div className="progress-wrap">
         {STEPS.map((s, i) => (

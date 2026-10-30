@@ -574,23 +574,40 @@ function UnitsPromptField({ initial, onSave }) {
   );
 }
 
-const DETAIL_KIND_LABEL = { "": "בלי פירוט", text: "שדה טקסט", letters_or_text: "אותיות (עד 5, תיבה לכל אות) או שם" };
-
-// an answer's follow-up settings: what opens when a reporter picks it
+// an answer's description field: when ticked, picking this answer opens a field whose label the
+// admin writes (e.g. "נא לתאר את התליון"). Optionally letter boxes (up to 5) or a name instead.
 function DetailSettings({ v, onSave, onClose }) {
-  const [kind, setKind] = useState(v.detail_kind || "");
+  const [on, setOn] = useState(!!v.detail_kind);
   const [prompt, setPrompt] = useState(v.detail_prompt || "");
+  const [letters, setLetters] = useState(v.detail_kind === "letters_or_text");
+  const missing = on && !prompt.trim();
   return (
     <div className="detail-settings">
-      <div style={{ fontWeight: 700, marginBottom: 6 }}>פירוט לתשובה "{v.value}"</div>
-      <p className="muted" style={{ margin: "0 0 8px", fontSize: 12 }}>כשהמשתמש בוחר בתשובה הזו, ייפתח לו שדה נוסף למילוי (למשל: "מה השם?").</p>
-      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
-        <select value={kind} onChange={(e) => setKind(e.target.value)} style={{ width: "auto" }}>
-          {Object.entries(DETAIL_KIND_LABEL).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
-        </select>
-        {kind && <input type="text" placeholder='מה לשאול? למשל "מה השם?"' value={prompt} onChange={(e) => setPrompt(e.target.value)} style={{ flex: 1, minWidth: 180 }} />}
-        <button className="btn btn-sm btn-pr" onClick={() => onSave(kind || null, prompt)}>שמור</button>
+      <div style={{ fontWeight: 700, marginBottom: 8 }}>שדה תיאור לתשובה "{v.value}"</div>
+      <label className="detail-check">
+        <input type="checkbox" checked={on} onChange={(e) => setOn(e.target.checked)} />
+        כשהמשתמש בוחר בתשובה הזו — לפתוח לו שדה טקסט לתיאור
+      </label>
+      {on && (
+        <>
+          <label style={{ marginTop: 8 }}>הטקסט שהמשתמש יראה מעל השדה</label>
+          <input
+            type="text"
+            className={missing ? "input-err" : undefined}
+            placeholder='למשל: "נא לתאר את התליון"'
+            value={prompt}
+            onChange={(e) => setPrompt(e.target.value)}
+          />
+          <label className="detail-check" style={{ marginTop: 8 }}>
+            <input type="checkbox" checked={letters} onChange={(e) => setLetters(e.target.checked)} />
+            במקום שדה טקסט: לשאול "אותיות או שם?" (תיבה לכל אות, עד 5)
+          </label>
+        </>
+      )}
+      <div style={{ display: "flex", gap: 6, marginTop: 10 }}>
+        <button className="btn btn-sm btn-pr" disabled={missing} onClick={() => onSave(on ? (letters ? "letters_or_text" : "text") : null, prompt.trim())}>שמור</button>
         <button className="btn btn-sm" onClick={onClose}>ביטול</button>
+        {missing && <span className="err-text" style={{ fontSize: 12, alignSelf: "center" }}>יש לכתוב את הטקסט שהמשתמש יראה</span>}
       </div>
     </div>
   );
@@ -779,6 +796,7 @@ function QuestionCard({ attr, onRename, onSetType, onSetWeight, onSetRequired, o
   }
 
   const isChoice = attr.input_type === "single" || attr.input_type === "multi";
+  const isCity = attr.name === "עיר"; // free text, but its values are extra autocomplete cities
   const [copyOpen, setCopyOpen] = useState(false);
   const [copyLists, setCopyLists] = useState([]);
   const [copyFrom, setCopyFrom] = useState(null);
@@ -863,7 +881,12 @@ function QuestionCard({ attr, onRename, onSetType, onSetWeight, onSetRequired, o
           <button className="btn btn-sm btn-soft" onClick={onDelete}>מחק שאלה</button>
         </div>
       </div>
-      {isChoice && (
+      {isCity && (
+        <p className="muted" style={{ margin: "10px 14px 0", fontSize: 13 }}>
+          המשתמש בוחר עד 3 ערים, עם השלמה אוטומטית מרשימת כל היישובים בישראל. כאן אפשר להוסיף ערים/מקומות נוספים לרשימה:
+        </p>
+      )}
+      {(isChoice || isCity) && (
         <div className="q-card-body">
           <div className="chip-row">
             {shownValues.map((v) => (
@@ -880,11 +903,11 @@ function QuestionCard({ attr, onRename, onSetType, onSetWeight, onSetRequired, o
                 >
                   {selectMode && <input type="checkbox" readOnly checked={marked.has(v.id)} style={{ width: "auto", margin: 0 }} />}
                   {v.value}
-                  {v.detail_kind && <span title={"מבקש פירוט: " + (v.detail_prompt || "")}>📝</span>}
+                  {v.detail_kind && <span className="detail-badge" title={"פותח שדה: " + (v.detail_prompt || "")}>+ תיאור</span>}
                   {!selectMode && (
                     <>
                       <button type="button" className="tag-x" title="שינוי הנוסח (התשובה נשארת אותה תשובה בהשוואות)" onClick={() => setEditingValueId(v.id)}>✎</button>
-                      <button type="button" className="tag-x" title="פירוט: שדה נוסף שנפתח כשבוחרים בתשובה הזו" onClick={() => setDetailValueId(v.id)}>⋯</button>
+                      <button type="button" className="tag-x" title="שדה תיאור שנפתח למשתמש כשבוחרים בתשובה הזו" onClick={() => setDetailValueId(v.id)}>📝</button>
                       <button type="button" className="tag-x" title="הסר תשובה זו" onClick={() => onDeleteValue(v)}>✕</button>
                     </>
                   )}
@@ -916,7 +939,7 @@ function QuestionCard({ attr, onRename, onSetType, onSetWeight, onSetRequired, o
           )}
           {attr.values.length > 1 && (
             <p className="muted" style={{ fontSize: 12, margin: "6px 0 0" }}>
-              ניתן לגרור תשובה כדי לשנות את הסדר (הימנית ביותר מוצגת ראשונה). ✎ משנה את הנוסח בלבד: דיווחים שכבר בחרו בתשובה יציגו את הנוסח החדש וימשיכו להיות מושווים אליה. ⋯ מגדיר שדה פירוט שנפתח כשבוחרים בתשובה (📝 = מוגדר).
+              ניתן לגרור תשובה כדי לשנות את הסדר (הימנית ביותר מוצגת ראשונה). ✎ משנה את הנוסח בלבד: דיווחים שכבר בחרו בתשובה יציגו את הנוסח החדש וימשיכו להיות מושווים אליה. 📝 מגדיר שדה תיאור שנפתח למשתמש כשבוחרים בתשובה ("+ תיאור" = מוגדר).
             </p>
           )}
           <div className="chip-add-row">
